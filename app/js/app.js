@@ -1,10 +1,10 @@
 import * as store from './store.js';
-import { generatePlan, PHASES } from './engine/plan.js';
+import { generatePlan, PHASES, FITNESS_GOALS } from './engine/plan.js';
 import { adaptPlan, recentStats, currentWeek } from './engine/adapt.js';
 import { vdotFromPerformance, predictTime } from './engine/vdot.js';
 import { todayISO, daysBetween } from './engine/dates.js';
-import { STEPS, defaultDraft } from './onboarding.js';
-import { esc, pace, paceRange, duration, dateLong, dateShort, dateFull, ZONES, TYPE_ICON, stepDuration } from './format.js';
+import { visibleSteps, defaultDraft } from './onboarding.js';
+import { esc, pace, paceRange, duration, dateLong, dateShort, dateFull, ZONES, TYPE_ICON, stepDuration, KIND_LABEL } from './format.js';
 
 let state = store.load();
 let draft = state.plan ? { ...defaultDraft(), ...state.plan.profile } : defaultDraft();
@@ -50,12 +50,14 @@ function route() {
 // ---------------- Questionnaire ----------------
 
 function renderOnboarding() {
-  const step = STEPS[stepIdx];
-  const last = stepIdx === STEPS.length - 1;
+  const steps = visibleSteps(draft);
+  stepIdx = Math.min(stepIdx, steps.length - 1);
+  const step = steps[stepIdx];
+  const last = stepIdx === steps.length - 1;
   view.innerHTML = `
     <section class="onboarding">
-      <div class="progress"><div style="width:${((stepIdx + 1) / STEPS.length) * 100}%"></div></div>
-      <p class="step-count">Question ${stepIdx + 1} / ${STEPS.length}</p>
+      <div class="progress"><div style="width:${((stepIdx + 1) / steps.length) * 100}%"></div></div>
+      <p class="step-count">Question ${stepIdx + 1} / ${steps.length}</p>
       <h1>${esc(step.title)}</h1>
       <form id="step-form" novalidate>${step.render(draft)}
         <p class="error" role="alert"></p>
@@ -76,8 +78,7 @@ function renderOnboarding() {
     if (err) { form.querySelector('.error').textContent = err; return; }
     if (!last) { stepIdx++; renderOnboarding(); return; }
     try {
-      const profile = { ...draft };
-      delete profile.hasRecent;
+      const profile = cleanProfile(draft);
       state = { plan: generatePlan(profile, { today: today() }), log: {} };
       persist();
       stepIdx = 0;
@@ -86,6 +87,41 @@ function renderOnboarding() {
       form.querySelector('.error').textContent = ex.message;
     }
   });
+}
+
+/** Ne garde que les réponses pertinentes pour le mode choisi. */
+function cleanProfile(d) {
+  const p = { ...d };
+  delete p.hasRecent;
+  if (p.mode === 'fitness') {
+    delete p.raceDate; delete p.raceDistance; delete p.targetTimeSec;
+    if (p.fitnessGoal === 'restart') { p.level = 'beginner'; p.recent = null; }
+  } else {
+    p.mode = 'race';
+    delete p.fitnessGoal; delete p.durationWeeks;
+  }
+  return p;
+}
+
+/** Nouveau cycle de remise en forme, à partir du niveau atteint. */
+function newCycle() {
+  const old = state.plan;
+  const prof = { ...old.profile };
+  delete prof.raceDate;
+  const test = allSessions().find((s) => s.type === 'race' && state.log[s.id]?.timeSec);
+  if (test) prof.recent = { distanceM: 5000, timeSec: state.log[test.id].timeSec };
+  if (prof.fitnessGoal === 'restart') {
+    Object.assign(prof, { fitnessGoal: 'regular', level: 'beginner', weeklyKm: 12, longestRunKm: 5, durationWeeks: 12 });
+  } else {
+    const last = old.weeks.slice(-4, -1);
+    const done = last.flatMap((w) => w.sessions).filter((s) => state.log[s.id]?.done);
+    prof.weeklyKm = Math.round(done.reduce((a, s) => a + (state.log[s.id].actualKm ?? s.km), 0) / Math.max(1, last.length)) || prof.weeklyKm;
+    if (prof.fitnessGoal === 'regular' && done.length >= last.flatMap((w) => w.sessions).length * 0.8) prof.fitnessGoal = 'progress';
+  }
+  state = { plan: generatePlan(prof, { today: today() }), log: {} };
+  persist();
+  showSheet(`<h2>Nouveau cycle prêt</h2><p>${esc(FITNESS_GOALS[prof.fitnessGoal].label)} · ${prof.durationWeeks} semaines${test ? ', allures recalibrées avec ton test 5 km' : ''}.</p><button class="btn primary" data-close>C'est parti</button>`);
+  route();
 }
 
 // ---------------- Aujourd'hui ----------------
@@ -124,19 +160,29 @@ function renderToday() {
     </section>`;
   }
 
-  view.innerHTML = `
-    <header class="hero">
-      <p class="muted">${esc(p.raceLabel)} · ${esc(dateFull(p.profile.raceDate))}</p>
+  const fitness = p.mode === 'fitness';
+  const weekNum = week ? week.index + 1 : 0;
+  const hero = fitness
+    ? `<p class="muted">Remise en forme · ${esc(p.raceLabel)}</p>
+      <div class="countdown"><strong>${weekNum || 1}</strong><span>/ ${p.weeks.length} semaines</span></div>
+      ${!week && t < p.weeks[0].start ? `<p class="muted">Début le ${esc(dateLong(p.weeks[0].start))}</p>` : ''}
+      <p>Objectif du cycle : <strong>${esc(p.goalText)}</strong></p>`
+    : `<p class="muted">${esc(p.raceLabel)} · ${esc(dateFull(p.profile.raceDate))}</p>
       <div class="countdown"><strong>${daysLeft}</strong><span>jours</span></div>
-      <p>Objectif visé : <strong>${duration(p.predictedGoalSec)}</strong> <span class="muted">(${pace(p.racePace)}/km)</span></p>
-    </header>
-    ${next ? `<h2 class="section-title">${next.date === t ? 'Aujourd\'hui' : 'Prochaine séance'}</h2>${sessionCard(next, { big: true })}` : '<section class="card"><p>Plan terminé. Bravo ! Refais le questionnaire pour un nouvel objectif.</p></section>'}
+      <p>Objectif visé : <strong>${duration(p.predictedGoalSec)}</strong> <span class="muted">(${pace(p.racePace)}/km)</span></p>`;
+  const finished = fitness
+    ? `<section class="card"><h2>Cycle terminé 🎉</h2><p>Le cycle suivant repart de ton niveau actuel${p.profile.fitnessGoal === 'restart' ? ' : passage au mode « Courir régulièrement »' : ''}.</p><button class="btn primary" id="new-cycle">Lancer le cycle suivant</button></section>`
+    : '<section class="card"><p>Plan terminé. Bravo ! Refais le questionnaire (onglet Profil) pour un nouvel objectif.</p></section>';
+  view.innerHTML = `
+    <header class="hero">${hero}</header>
+    ${next ? `<h2 class="section-title">${next.date === t ? 'Aujourd\'hui' : 'Prochaine séance'}</h2>${sessionCard(next, { big: true })}` : finished}
     ${missed.length ? `<section class="card warn"><p><strong>${missed.length} séance(s) passée(s) sans retour.</strong> Indique si tu les as faites : c'est ce qui permet d'adapter le plan.</p>${missed.map((s) => sessionCard(s)).join('')}</section>` : ''}
     ${weekBlock}
-    ${stats.done >= 3 ? `<section class="card"><h2>Coach</h2><p class="muted">Sur 14 jours : ${Math.round((stats.completion ?? 0) * 100)} % des séances faites, ${Math.round(stats.hardShare * 100)} % ressenties dures.</p>
+    ${stats.done >= 3 && p.profile.fitnessGoal !== 'restart' ? `<section class="card"><h2>Coach</h2><p class="muted">Sur 14 jours : ${Math.round((stats.completion ?? 0) * 100)} % des séances faites, ${Math.round(stats.hardShare * 100)} % ressenties dures.</p>
       <button class="btn" id="adapt">Réajuster le plan</button></section>` : ''}
     ${p.warnings.map((w) => `<section class="card note"><p>${esc(w)}</p></section>`).join('')}`;
   view.querySelector('#adapt')?.addEventListener('click', () => doAdapt());
+  view.querySelector('#new-cycle')?.addEventListener('click', newCycle);
 }
 
 function doAdapt(newRace = null) {
@@ -169,8 +215,11 @@ function renderPlan(openIdx) {
       <div class="week-sessions">${w.sessions.map((s) => sessionCard(s)).join('')}</div>
     </details>`;
   }).join('');
+  const sub = state.plan.mode === 'fitness'
+    ? `${state.plan.weeks.length} semaines · ${esc(state.plan.raceLabel)}`
+    : `${state.plan.weeks.length} semaines · ${esc(state.plan.raceLabel)} le ${esc(dateFull(state.plan.profile.raceDate))}`;
   view.innerHTML = `<h1>Mon plan</h1>
-    <p class="muted">${state.plan.weeks.length} semaines · ${state.plan.raceLabel} le ${esc(dateFull(state.plan.profile.raceDate))}</p>
+    <p class="muted">${sub}</p>
     <div class="volume-chart" aria-label="Volume hebdomadaire">${volumeChart()}</div>${html}`;
   if (open != null) document.getElementById(`w${open}`)?.scrollIntoView({ block: 'center' });
 }
@@ -190,7 +239,7 @@ function stepsHTML(steps) {
     const z = st.zone ? ZONES[st.zone] : null;
     return `<li class="step kind-${st.kind}" style="--zc:${z?.color ?? 'var(--muted)'}">
       <span class="dur">${stepDuration(st.dur)}</span>
-      <span class="what"><span><strong>${z ? z.label : 'Récupération'}</strong>${st.pace ? ` <span class="pace">${paceRange(st.pace)}</span>` : ''}</span><small>${esc(st.note ?? '')}</small></span>
+      <span class="what"><span><strong>${z ? z.label : KIND_LABEL[st.kind] ?? 'Récupération'}</strong>${st.pace ? ` <span class="pace">${paceRange(st.pace)}</span>` : ''}</span><small>${esc(st.note ?? '')}</small></span>
     </li>`;
   }).join('')}</ol>`;
 }
@@ -262,17 +311,18 @@ function askRaceResult(s) {
 function renderProfile() {
   const p = state.plan;
   const cur = currentWeek(p, today()) ?? p.weeks[0];
+  const restart = p.profile.fitnessGoal === 'restart';
   view.innerHTML = `
     <h1>Profil & allures</h1>
-    <section class="card">
+    ${restart ? `<section class="card"><h2>Reprise</h2><p class="muted">Pas de chrono à ce stade : l'objectif est de courir 30 min sans s'arrêter. Les allures ci-dessous sont indicatives, fie-toi surtout à l'aisance respiratoire.</p></section>` : `<section class="card">
       <h2>Niveau actuel</h2>
       <p>VDOT <strong>${cur.vdot}</strong> <span class="muted">(départ ${p.vdotStart}, visé ${p.vdotGoal})</span></p>
-      <p class="muted">Prédiction aujourd'hui : ${duration(predictTime(cur.vdot, p.profile.raceDistance))} · objectif plan : ${duration(p.predictedGoalSec)}</p>
-    </section>
+      <p class="muted">Prédiction ${p.mode === 'fitness' ? 'sur 5 km' : ''} aujourd'hui : ${duration(predictTime(cur.vdot, p.profile.raceDistance))} · objectif plan : ${duration(p.predictedGoalSec)}</p>
+    </section>`}
     <section class="card">
       <h2>Tes allures cette semaine</h2>
       <table class="paces">${Object.entries(cur.paces).map(([z, r]) => `<tr><td><span class="swatch" style="background:${ZONES[z].color}"></span>${ZONES[z].label}</td><td>${paceRange(r)}</td></tr>`).join('')}
-        <tr><td><span class="swatch" style="background:${ZONES.race.color}"></span>Allure course</td><td>${pace(p.racePace)}/km</td></tr></table>
+        ${p.racePace ? `<tr><td><span class="swatch" style="background:${ZONES.race.color}"></span>${p.mode === 'fitness' ? 'Allure objectif 5 km' : 'Allure course'}</td><td>${pace(p.racePace)}/km</td></tr>` : ''}</table>
     </section>
     <section class="card">
       <h2>Nouveau chrono</h2>
@@ -289,7 +339,7 @@ function renderProfile() {
         <button class="btn" id="redo">Refaire le questionnaire</button>
       </div>
     </section>
-    <p class="muted center small">Run Coach · v0.1</p>`;
+    <p class="muted center small">Run Coach · v0.2</p>`;
 
   view.querySelector('#new-race').addEventListener('click', () => {
     showSheet(`<h2>Nouveau chrono</h2><form id="nr">
@@ -323,7 +373,8 @@ function renderProfile() {
   });
   view.querySelector('#redo').addEventListener('click', () => {
     if (!confirm('Générer un nouveau plan ? L\'historique des séances du plan actuel sera effacé.')) return;
-    draft = { ...defaultDraft(), ...p.profile, hasRecent: !!p.profile.recent };
+    draft = { ...defaultDraft(), ...p.profile, mode: p.mode ?? 'race', hasRecent: !!p.profile.recent };
+    if (draft.mode === 'fitness') { delete draft.raceDate; draft.raceDistance = null; }
     stepIdx = 0;
     location.hash = '#/onboarding';
   });

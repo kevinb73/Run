@@ -26,7 +26,25 @@ export const PHASES = {
   build: { label: 'Développement', goal: 'Élever le seuil et la VMA, monter le volume.' },
   specific: { label: 'Spécifique', goal: "Travailler l'allure exacte de la course." },
   taper: { label: 'Affûtage', goal: 'Réduire le volume, garder l\'intensité : arriver frais le jour J.' },
+  restart: { label: 'Reprise', goal: 'Alterner marche et course pour habituer le corps en douceur.' },
 };
+
+export const FITNESS_GOALS = {
+  restart: { label: 'Reprendre la course', end: 'Courir 30 min sans s\'arrêter' },
+  regular: { label: 'Courir régulièrement', end: 'Installer une routine et un volume stable' },
+  progress: { label: 'Progresser', end: 'Améliorer ton chrono sur 5 km' },
+};
+
+/** Début du plan : lundi de cette semaine si on est en début de semaine, sinon lundi prochain. */
+export function planStart(today) {
+  return weekday(today) <= 2 ? mondayOf(today) : addDays(mondayOf(today), 7);
+}
+
+/** Phases d'un cycle « courir régulièrement » : fondation puis développement léger, dernière semaine allégée. */
+function regularPhases(n) {
+  const base = Math.max(1, Math.round((n - 1) * 0.6));
+  return [...Array(base).fill('base'), ...Array(Math.max(0, n - 1 - base)).fill('build'), 'taper'];
+}
 
 const DEFAULT_VDOT = { beginner: 30, intermediate: 38, advanced: 46 };
 // Gain de VDOT réaliste par semaine d'entraînement, et plafond sur un cycle.
@@ -60,8 +78,9 @@ export function allocatePhases(nWeeks, race) {
 }
 
 /** Types de séances de qualité pour une semaine. */
-function qualityPlan(phase, level, idxInPhase, nSessions, recovery, distance) {
+function qualityPlan(phase, level, idxInPhase, nSessions, recovery, distance, light = false) {
   let q;
+  if (light && phase === 'build') return recovery ? ['fartlek'] : [idxInPhase % 2 ? 'fartlek' : 'threshold'];
   if (phase === 'base') {
     const alt = idxInPhase % 2 ? 'fartlek' : 'hills';
     q = level === 'beginner' ? [] : level === 'advanced' && nSessions >= 5 ? [alt, 'threshold'] : [alt];
@@ -112,6 +131,16 @@ function buildQuality(type, c, p) {
  */
 export function generatePlan(profile, opts) {
   const { today } = opts;
+  const fitness = profile.mode === 'fitness';
+  if (fitness && profile.fitnessGoal === 'restart') return generateRestartPlan(profile, opts);
+  if (fitness) {
+    // Un cycle de forme = une préparation « 5 km » sans pression, conclue par un test chrono.
+    profile = { ...profile, raceDistance: 5000, targetTimeSec: null };
+    if (!profile.raceDate) {
+      profile.raceDate = addDays(opts.startDate ?? planStart(today), (profile.durationWeeks - 1) * 7 + profile.longRunDay);
+    }
+  }
+  const regular = fitness && profile.fitnessGoal === 'regular';
   const race = RACES[profile.raceDistance];
   if (!race) throw new Error('Distance de course non supportée.');
   const level = profile.level;
@@ -121,7 +150,7 @@ export function generatePlan(profile, opts) {
   if (!days.includes(profile.longRunDay)) throw new Error('Le jour de sortie longue doit faire partie des jours choisis.');
 
   // Début : lundi de cette semaine si on est en début de semaine, sinon lundi prochain.
-  const start = opts.startDate ?? (weekday(today) <= 2 ? mondayOf(today) : addDays(mondayOf(today), 7));
+  const start = opts.startDate ?? planStart(today);
   const raceMonday = mondayOf(profile.raceDate);
   const nWeeks = daysBetween(start, raceMonday) / 7 + 1;
   if (daysBetween(today, profile.raceDate) < 0) throw new Error('La date de course est passée.');
@@ -136,11 +165,13 @@ export function generatePlan(profile, opts) {
       vdotStart = vdotFromPerformance(profile.recent.distanceM, profile.recent.timeSec);
     } else {
       vdotStart = DEFAULT_VDOT[level];
-      warnings.push("Niveau estimé sans chrono de référence : fais un test (5 km à fond) dans les 2 premières semaines puis réajuste le plan.");
+      warnings.push(fitness
+        ? 'Niveau estimé sans chrono de référence : les allures seront recalibrées avec le test 5 km de fin de cycle (ou ajoute un chrono dans Profil).'
+        : 'Niveau estimé sans chrono de référence : fais un test (5 km à fond) dans les 2 premières semaines puis réajuste le plan.');
     }
   }
 
-  const phases = allocatePhases(nWeeks, race);
+  const phases = regular ? regularPhases(nWeeks) : allocatePhases(nWeeks, race);
   const trainingWeeks = phases.filter((p) => p !== 'taper').length;
   const maxGain = Math.min(GAIN_CAP[level], GAIN_RATE[level] * trainingWeeks);
   const targetVdot = profile.targetTimeSec ? vdotFromPerformance(profile.raceDistance, profile.targetTimeSec) : null;
@@ -163,7 +194,9 @@ export function generatePlan(profile, opts) {
   // --- Volume ---
   const sessionCap = nSessions * KM_PER_SESSION[level];
   const startVolume = Math.max(profile.weeklyKm || 0, nSessions * 4);
-  const peak = Math.max(Math.min(race.peak[level], sessionCap), Math.min(startVolume, sessionCap));
+  let peak = Math.max(Math.min(race.peak[level], sessionCap), Math.min(startVolume, sessionCap));
+  // Routine : on stabilise un volume raisonnable plutôt que de viser un pic.
+  if (regular) peak = Math.min(peak, Math.max(startVolume * 1.4, startVolume + 10));
   const phaseCap = { base: 0.85 * peak, build: 0.95 * peak, specific: peak };
   if ((profile.weeklyKm || 0) < 10 && profile.raceDistance >= 21097) {
     warnings.push('Volume actuel faible pour cette distance : la progression sera prudente, écoute les signaux de douleur.');
@@ -219,13 +252,13 @@ export function generatePlan(profile, opts) {
       const pre = days.filter((d) => d < raceWd - restBefore).slice(-3);
       const sharpDay = pre.find((d) => raceWd - d >= 2);
       for (const d of pre) {
-        if (d === sharpDay) push(d, W.sharpener(c));
+        if (d === sharpDay && !regular) push(d, W.sharpener(c));
         else push(d, W.easyRun(c, clamp(volume * 0.15, 3, 7), { strides: d === pre[pre.length - 1] }));
       }
       const goalText = formatDuration(predictTime(vdotGoal, profile.raceDistance));
-      push(raceWd, W.raceDay(c, race.label, goalText));
+      push(raceWd, fitness ? W.testRun(c, regular) : W.raceDay(c, race.label, goalText));
     } else {
-      let qTypes = qualityPlan(phase, level, idxInPhase, nSessions, recovery, profile.raceDistance);
+      let qTypes = qualityPlan(phase, level, idxInPhase, nSessions, recovery, profile.raceDistance, regular);
       const slots = assignDays(days, profile.longRunDay, qTypes.length);
 
       // Sortie longue
@@ -285,15 +318,79 @@ export function generatePlan(profile, opts) {
 
   return {
     version: 1,
+    mode: fitness ? 'fitness' : 'race',
     createdAt: today,
     profile,
-    raceLabel: race.label,
+    raceLabel: fitness ? FITNESS_GOALS[profile.fitnessGoal].label : race.label,
+    goalText: fitness ? FITNESS_GOALS[profile.fitnessGoal].end : null,
     vdotStart: Math.round(vdotStart * 10) / 10,
     vdotGoal: Math.round(vdotGoal * 10) / 10,
     predictedNowSec: predictTime(vdotStart, profile.raceDistance),
     predictedGoalSec: predictTime(vdotGoal, profile.raceDistance),
     racePace: rp,
     warnings,
+    adjustments: [],
+    weeks,
+  };
+}
+
+// ---------- Reprise : alternance marche / course ----------
+
+// [course (s), marche (s), répétitions] — progression inspirée des programmes de reprise classiques.
+const RUN_WALK = [
+  [60, 120, 8], [90, 120, 7], [120, 120, 6], [180, 120, 5], [240, 90, 5], [300, 90, 4],
+  [480, 120, 3], [600, 120, 3], [720, 90, 2], [1200, 0, 1], [1500, 0, 1], [1800, 0, 1],
+];
+
+function generateRestartPlan(profile, opts) {
+  const { today } = opts;
+  const start = opts.startDate ?? planStart(today);
+  const nWeeks = profile.durationWeeks;
+  const days = [...profile.days].sort((a, b) => a - b);
+  if (days.length < 3) throw new Error('Il faut au moins 3 jours par semaine.');
+  // 3 séances suffisent en reprise : on garde des jours espacés.
+  const longDay = days.includes(profile.longRunDay) ? profile.longRunDay : days.at(-1);
+  const slots = days.length > 3 ? [longDay, ...assignDays(days, longDay, 2).quality].sort((a, b) => a - b) : days;
+  const vdot = opts.vdotStart ?? DEFAULT_VDOT.beginner;
+  const paces = trainingPaces(vdot);
+  const c = { paces };
+  const weekOffset = opts.weekOffset ?? 0;
+
+  const weeks = [];
+  for (let i = 0; i < nWeeks; i++) {
+    // Progression régulière dans le tableau ; toutes les 4 semaines on consolide (même palier).
+    // Les 3 dernières semaines sont toujours 20 → 25 → 30 min continues ; avant, on répartit l'alternance.
+    const nAlt = RUN_WALK.length - 3, weeksAlt = nWeeks - 3;
+    const altIdx = (k) => (weeksAlt > 1 ? Math.round((k / (weeksAlt - 1)) * (nAlt - 1)) : nAlt - 1);
+    let idx = i >= weeksAlt ? nAlt + (i - weeksAlt) : altIdx(i);
+    if (i < weeksAlt && i % 4 === 3) idx = altIdx(i - 1); // semaine de consolidation
+    const [run, walk, reps] = RUN_WALK[idx];
+    const weekStart = addDays(start, i * 7);
+    const sessions = [];
+    slots.forEach((d, k) => {
+      const date = addDays(weekStart, d);
+      if (daysBetween(today, date) < 0) return;
+      const final = i === nWeeks - 1 && k === slots.length - 1;
+      const s = W.runWalk(c, run, walk, reps, final);
+      const est = W.estimate(s.steps, paces);
+      sessions.push({ id: `${weekOffset + i}-${d}`, date, ...s, km: est.km, min: est.min });
+    });
+    weeks.push({
+      index: weekOffset + i, start: weekStart, phase: 'restart', recovery: i < nWeeks - 3 && i % 4 === 3, raceWeek: false,
+      volumeKm: Math.round(sessions.reduce((a, x) => a + x.km, 0) * 10) / 10, vdot, paces, sessions,
+    });
+  }
+  const end = addDays(start, (nWeeks - 1) * 7 + slots.at(-1));
+  return {
+    version: 1,
+    mode: 'fitness',
+    createdAt: today,
+    profile: { ...profile, level: 'beginner', raceDate: end, raceDistance: 5000 },
+    raceLabel: FITNESS_GOALS.restart.label,
+    goalText: FITNESS_GOALS.restart.end,
+    vdotStart: vdot, vdotGoal: vdot,
+    predictedNowSec: null, predictedGoalSec: null, racePace: null,
+    warnings: ['Douleur articulaire ou tendineuse qui persiste plus de 2 jours : répète la semaine précédente au lieu d\'avancer.'],
     adjustments: [],
     weeks,
   };
