@@ -54,7 +54,7 @@ Les GPT personnalisés sont retirés par OpenAI le **11 décembre 2026** : on pa
 | # | Fonction | Détail | Effort |
 |---|---|---|---|
 | 2.1 | ~~Serveur MCP (lecture seule)~~ → **fait en v0.33** : `server/mcp_coach.py`, 5 outils, adresse secrète dérivée de la clé (Profil → Coach ChatGPT) | — | — |
-| 2.2 | Branchement dans ChatGPT Plus | Plugins → « Add custom MCP server » (≈ 10 min de ton côté) | Petit |
+| 2.2 | ~~Branchement dans ChatGPT~~ → **fait le 14 nov.** (offre Go : Paramètres → Plugins → Ajouter → « Ajouter un serveur MCP personnalisé », sans authentification) | — | — |
 | 2.3 | Actions (mettre en pause, alléger une séance) | Seulement si l'écriture est disponible sur l'offre Plus | À confirmer |
 
 Coût : 0 € (abonnement ChatGPT existant). Points d'attention : confidentialité (données de santé lues par OpenAI), menus ChatGPT qui évoluent vite — revérifier la documentation officielle au moment de construire.
@@ -147,6 +147,7 @@ Niche la plus prometteuse : **préparation physique des arbitres** (tests obliga
 | v0.33 | Coach ChatGPT : connecteur MCP en lecture seule sur le serveur (profil et plan, séances récentes, bilan mensuel, forme et charge, douleurs et ajustements), adresse secrète affichée dans Profil |
 | v0.34 | Correctif : saccades sur Aujourd'hui (boucle de réaffichage quand le serveur refusait l'envoi du renfo) ; la position de défilement est conservée lors d'un rafraîchissement |
 | v0.35 | Correctif : bouton « Envoyer sur ma montre » qui restait bloqué sur « Envoi en cours… » après un refus du serveur ; un appui relance l'envoi |
+| serveur | Coach ChatGPT branché (offre Go : Paramètres → Plugins → Ajouter → serveur MCP personnalisé, sans authentification). Correctif : jours envoyés en toutes lettres (ChatGPT décalait les jours de sport) |
 
 ## Coûts récurrents
 
