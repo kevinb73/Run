@@ -1,7 +1,7 @@
 // Questionnaire d'entrée : une question par écran, comme un coach qui fait connaissance.
 
 import { esc, DAYS_SHORT, dayName, duration, dateFull } from './format.js';
-import { RACES, FITNESS_GOALS } from './engine/plan.js';
+import { RACES, FITNESS_GOALS, SPORTS } from './engine/plan.js';
 import { addDays, todayISO } from './engine/dates.js';
 
 const LEVELS = [
@@ -33,7 +33,7 @@ export function defaultDraft() {
   return {
     mode: null, fitnessGoal: null, durationWeeks: 12,
     raceDistance: null, raceDate: '', targetTimeSec: null, level: null,
-    recent: null, hasRecent: null, weeklyKm: 15, longestRunKm: 8, days: [1, 3, 6], longRunDay: 6,
+    recent: null, hasRecent: null, weeklyKm: 15, longestRunKm: 8, days: [1, 3, 6], longRunDay: 6, otherSports: [],
   };
 }
 
@@ -41,6 +41,7 @@ export function defaultDraft() {
 const isRace = (d) => d.mode === 'race';
 const isFitness = (d) => d.mode === 'fitness';
 const isRestart = (d) => isFitness(d) && d.fitnessGoal === 'restart';
+const minDays = (d) => (isFitness(d) && !isRestart(d) ? 2 : 3);
 
 const FITNESS_HINTS = {
   restart: 'Je ne cours pas (ou plus). Alternance marche / course jusqu\'à 30 min sans m\'arrêter.',
@@ -167,13 +168,34 @@ export const STEPS = [
     },
   },
   {
+    title: 'Pratiques-tu un autre sport ?',
+    render: (d) => `<p class="lead">Coche les jours <strong>possibles</strong>, même si tu n'y vas pas chaque semaine. Le plan évitera de te mettre une séance dure le lendemain.</p>
+      ${Object.entries(SPORTS).map(([kind, sp]) => `
+        <p class="field">${sp.icon} ${sp.label}</p>
+        <div class="days">${DAYS_SHORT.map((n, i) => `
+          <label class="day"><input type="checkbox" name="sp-${kind}" value="${i}" ${d.otherSports.some((x) => x.kind === kind && x.day === i) ? 'checked' : ''}><span>${n}</span></label>`).join('')}</div>`).join('')}
+      <p class="hint">Aucun autre sport ? Laisse tout décoché et continue.</p>`,
+    read: (f, d) => {
+      d.otherSports = Object.keys(SPORTS).flatMap((kind) =>
+        [...f.querySelectorAll(`[name=sp-${kind}]:checked`)].map((x) => ({ day: Number(x.value), kind })));
+      const busy = new Set(d.otherSports.map((x) => x.day));
+      d.days = d.days.filter((x) => !busy.has(x));
+    },
+  },
+  {
     title: 'Quels jours peux-tu courir ?',
-    render: (d) => `<p class="lead">${isRestart(d) ? '3 séances par semaine suffisent en reprise : choisis au moins 3 jours, l\'app gardera les mieux espacés.' : '3 à 6 jours. Le nombre de jours = le nombre de séances par semaine.'}</p>
+    render: (d) => {
+      const busy = new Set(d.otherSports.map((x) => x.day));
+      const min = minDays(d);
+      return `<p class="lead">${isRestart(d) ? '3 séances par semaine suffisent en reprise : choisis au moins 3 jours, l\'app gardera les mieux espacés.' : `${min} à 6 jours. Le nombre de jours = le nombre de courses par semaine.`}${busy.size ? ' Les jours de sport sont grisés.' : ''}</p>
       <div class="days">${DAYS_SHORT.map((n, i) => `
-        <label class="day"><input type="checkbox" name="day" value="${i}" ${d.days.includes(i) ? 'checked' : ''}><span>${n}</span></label>`).join('')}</div>`,
+        <label class="day ${busy.has(i) ? 'busy' : ''}"><input type="checkbox" name="day" value="${i}" ${d.days.includes(i) ? 'checked' : ''} ${busy.has(i) ? 'disabled' : ''}><span>${busy.has(i) ? SPORTS[d.otherSports.find((x) => x.day === i).kind].icon : n}</span></label>`).join('')}</div>
+      ${isFitness(d) && !isRestart(d) && busy.size ? '<p class="hint">Avec ton autre sport, 2 courses par semaine suffisent pour progresser en endurance.</p>' : ''}`;
+    },
     read: (f, d) => {
       const days = [...f.querySelectorAll('[name=day]:checked')].map((x) => Number(x.value));
-      if (days.length < 3) return 'Choisis au moins 3 jours.';
+      const min = minDays(d);
+      if (days.length < min) return `Choisis au moins ${min} jours.`;
       if (days.length > 6) return 'Garde au moins un jour de repos complet.';
       d.days = days;
       if (!days.includes(d.longRunDay)) d.longRunDay = days.includes(6) ? 6 : days.includes(5) ? 5 : days.at(-1);
@@ -201,6 +223,12 @@ export const STEPS = [
         rows.push(['Jours', `${d.days.map((i) => DAYS_SHORT[i]).join(', ')} — longue le ${dayName(d.longRunDay)}`]);
       } else {
         rows.push(['Jours', d.days.map((i) => DAYS_SHORT[i]).join(', ')]);
+      }
+      if (d.otherSports.length) {
+        rows.push(['Autres sports', Object.entries(SPORTS).map(([k, sp]) => {
+          const ds = d.otherSports.filter((x) => x.kind === k).map((x) => DAYS_SHORT[x.day]);
+          return ds.length ? `${sp.label} : ${ds.join(', ')}` : null;
+        }).filter(Boolean).join(' · ')]);
       }
       return `<dl class="recap">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>`;
     },

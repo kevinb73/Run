@@ -1,5 +1,5 @@
 // Cache "réseau d'abord" : l'app fonctionne hors ligne, et récupère les mises à jour dès qu'il y a du réseau.
-const CACHE = 'run-coach-v2';
+const CACHE = 'run-coach-v3';
 const ASSETS = [
   './', './index.html', './css/style.css', './manifest.webmanifest', './icons/icon.svg', './icons/apple-touch-icon.png',
   './js/app.js', './js/store.js', './js/format.js', './js/onboarding.js',
@@ -18,7 +18,8 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return;
   e.respondWith(
-    fetch(e.request)
+    // cache: 'no-cache' force la vérification auprès du serveur : les mises à jour arrivent immédiatement.
+    fetch(e.request.url, { cache: 'no-cache' })
       .then((res) => { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(e.request, copy)); return res; })
       .catch(() => caches.match(e.request, { ignoreSearch: true })),
   );

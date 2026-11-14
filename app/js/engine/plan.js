@@ -29,6 +29,27 @@ export const PHASES = {
   restart: { label: 'Reprise', goal: 'Alterner marche et course pour habituer le corps en douceur.' },
 };
 
+export const SPORTS = {
+  futsal: { label: 'Futsal', icon: '⚽', description: 'Séance intense (sprints, changements de direction) : elle compte comme ta séance de fractionné de la semaine.' },
+  referee: { label: 'Arbitrage', icon: '🏁', description: 'Match arbitré : 8 à 12 km avec accélérations, une vraie charge d\'entraînement.' },
+};
+
+/** Activités hors course à pied (facultatives) pour une semaine. */
+function sportSessions(sports, weekStart, today, weekIdx, skipDays = []) {
+  const out = [];
+  for (const { day, kind } of sports) {
+    if (skipDays.includes(day)) continue;
+    const date = addDays(weekStart, day);
+    if (daysBetween(today, date) < 0) continue;
+    const sp = SPORTS[kind];
+    out.push({
+      id: `${weekIdx}-${day}-${kind}`, date, type: 'sport', sport: kind, optional: true,
+      title: `${sp.label} (si tu y vas)`, description: sp.description, steps: [], km: 0, min: 0,
+    });
+  }
+  return out;
+}
+
 export const FITNESS_GOALS = {
   restart: { label: 'Reprendre la course', end: 'Courir 30 min sans s\'arrêter' },
   regular: { label: 'Courir régulièrement', end: 'Installer une routine et un volume stable' },
@@ -96,16 +117,19 @@ function qualityPlan(phase, level, idxInPhase, nSessions, recovery, distance, li
 }
 
 /** Choisit les jours des séances de qualité : le plus loin possible de la sortie longue et entre elles. */
-export function assignDays(days, longDay, nQuality) {
+export function assignDays(days, longDay, nQuality, sportDays = []) {
   const quality = [];
   const candidates = days.filter((d) => d !== longDay);
-  for (let k = 0; k < nQuality && candidates.length; k++) {
+  // Jamais de séance dure le lendemain d'un sport intense (futsal, arbitrage) ; la veille est évitée si possible (score).
+  const allowed = candidates.filter((d) => !sportDays.some((sd) => (d - sd + 7) % 7 === 1));
+  for (let k = 0; k < nQuality; k++) {
     let best = null, bestScore = -1;
-    for (const d of candidates) {
+    for (const d of allowed) {
       if (quality.includes(d)) continue;
-      const score = Math.min(...[longDay, ...quality].map((o) => circDist(d, o)));
+      const score = Math.min(...[longDay, ...quality, ...sportDays].map((o) => circDist(d, o)));
       if (score > bestScore) { bestScore = score; best = d; }
     }
+    if (best == null) break; // aucun jour sûr : la séance dure est remplacée par un footing
     quality.push(best);
   }
   quality.sort((a, b) => a - b);
@@ -146,7 +170,10 @@ export function generatePlan(profile, opts) {
   const level = profile.level;
   const days = [...profile.days].sort((a, b) => a - b);
   const nSessions = days.length;
-  if (nSessions < 3) throw new Error('Il faut au moins 3 jours de course par semaine.');
+  const sports = profile.otherSports ?? [];
+  const sportDays = [...new Set(sports.map((x) => x.day))];
+  if (nSessions < (fitness ? 2 : 3)) throw new Error(`Il faut au moins ${fitness ? 2 : 3} jours de course par semaine.`);
+  if (days.some((d) => sportDays.includes(d))) throw new Error('Un jour de course tombe sur un jour de futsal/arbitrage.');
   if (!days.includes(profile.longRunDay)) throw new Error('Le jour de sortie longue doit faire partie des jours choisis.');
 
   // Début : lundi de cette semaine si on est en début de semaine, sinon lundi prochain.
@@ -202,7 +229,7 @@ export function generatePlan(profile, opts) {
     warnings.push('Volume actuel faible pour cette distance : la progression sera prudente, écoute les signaux de douleur.');
   }
 
-  const longFrac = nSessions <= 3 ? 0.36 : nSessions === 4 ? 0.32 : 0.28;
+  const longFrac = nSessions <= 2 ? 0.45 : nSessions === 3 ? 0.36 : nSessions === 4 ? 0.32 : 0.28;
   const minEasy = level === 'beginner' ? 3 : 5;
   const weekOffset = opts.weekOffset ?? 0;
 
@@ -259,7 +286,11 @@ export function generatePlan(profile, opts) {
       push(raceWd, fitness ? W.testRun(c, regular) : W.raceDay(c, race.label, goalText));
     } else {
       let qTypes = qualityPlan(phase, level, idxInPhase, nSessions, recovery, profile.raceDistance, regular);
-      const slots = assignDays(days, profile.longRunDay, qTypes.length);
+      // Le futsal/arbitrage apporte déjà de l'intensité : une séance dure de moins (aucune en mode « régulier »).
+      if (sportDays.length) qTypes = regular ? [] : qTypes.slice(0, Math.max(1, qTypes.length - 1));
+      const slots = assignDays(days, profile.longRunDay, qTypes.length, sportDays);
+      qTypes = qTypes.slice(0, slots.quality.length);
+      sessions.push(...sportSessions(sports, weekStart, today, weekOffset + i));
 
       // Sortie longue
       // Rampe progressive vers la sortie longue maximale (fonction de la distance), bornée par
@@ -302,7 +333,7 @@ export function generatePlan(profile, opts) {
     sessions.sort((a, b) => a.date.localeCompare(b.date));
     const actualKm = sessions.reduce((s, x) => s + x.km, 0);
     // Les minimums (footing, échauffements) peuvent dépasser la cible : on repart du réel.
-    if (!recovery && phase !== 'taper' && sessions.length === nSessions) load = Math.max(load, Math.min(actualKm, peak));
+    if (!recovery && phase !== 'taper' && sessions.filter((x) => !x.optional).length === nSessions) load = Math.max(load, Math.min(actualKm, peak));
     weeks.push({
       index: weekOffset + i,
       start: weekStart,
@@ -347,6 +378,7 @@ function generateRestartPlan(profile, opts) {
   const start = opts.startDate ?? planStart(today);
   const nWeeks = profile.durationWeeks;
   const days = [...profile.days].sort((a, b) => a - b);
+  const sports = profile.otherSports ?? [];
   if (days.length < 3) throw new Error('Il faut au moins 3 jours par semaine.');
   // 3 séances suffisent en reprise : on garde des jours espacés.
   const longDay = days.includes(profile.longRunDay) ? profile.longRunDay : days.at(-1);
@@ -375,6 +407,8 @@ function generateRestartPlan(profile, opts) {
       const est = W.estimate(s.steps, paces);
       sessions.push({ id: `${weekOffset + i}-${d}`, date, ...s, km: est.km, min: est.min });
     });
+    sessions.push(...sportSessions(sports, weekStart, today, weekOffset + i));
+    sessions.sort((a, b) => a.date.localeCompare(b.date));
     weeks.push({
       index: weekOffset + i, start: weekStart, phase: 'restart', recovery: i < nWeeks - 3 && i % 4 === 3, raceWeek: false,
       volumeKm: Math.round(sessions.reduce((a, x) => a + x.km, 0) * 10) / 10, vdot, paces, sessions,

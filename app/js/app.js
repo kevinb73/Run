@@ -1,5 +1,5 @@
 import * as store from './store.js';
-import { generatePlan, PHASES, FITNESS_GOALS } from './engine/plan.js';
+import { generatePlan, PHASES, FITNESS_GOALS, SPORTS } from './engine/plan.js';
 import { adaptPlan, recentStats, currentWeek } from './engine/adapt.js';
 import { vdotFromPerformance, predictTime } from './engine/vdot.js';
 import { todayISO, daysBetween } from './engine/dates.js';
@@ -124,17 +124,19 @@ function newCycle() {
   route();
 }
 
+const iconOf = (s) => (s.type === 'sport' ? SPORTS[s.sport]?.icon : TYPE_ICON[s.type]) ?? '•';
+
 // ---------------- Aujourd'hui ----------------
 
 function sessionCard(s, { big = false } = {}) {
   const entry = state.log[s.id];
-  const status = entry?.done ? '<span class="badge done">Fait</span>' : entry?.skipped ? '<span class="badge skip">Sautée</span>' : '';
+  const status = entry?.done ? '<span class="badge done">Fait</span>' : entry?.skipped ? `<span class="badge skip">${s.optional ? 'Pas fait' : 'Sautée'}</span>` : '';
   return `<a class="card session-card type-${s.type} ${big ? 'big' : ''}" href="#/session/${s.id}">
-    <span class="icon" aria-hidden="true">${TYPE_ICON[s.type] ?? '•'}</span>
+    <span class="icon" aria-hidden="true">${iconOf(s)}</span>
     <span class="body">
       <span class="date">${esc(big ? dateLong(s.date) : dateShort(s.date))}</span>
       <span class="title">${esc(s.title)}</span>
-      <span class="meta">${s.km} km · ~${duration(s.min * 60)}</span>
+      <span class="meta">${s.optional ? 'Facultatif' : `${s.km} km · ~${duration(s.min * 60)}`}</span>
     </span>${status}</a>`;
 }
 
@@ -142,21 +144,22 @@ function renderToday() {
   const p = state.plan;
   const t = today();
   const daysLeft = daysBetween(t, p.profile.raceDate);
-  const upcoming = allSessions().filter((s) => s.date >= t && !state.log[s.id]?.done && !state.log[s.id]?.skipped);
+  const upcoming = allSessions().filter((s) => s.date >= t && !s.optional && !state.log[s.id]?.done && !state.log[s.id]?.skipped);
   const next = upcoming[0];
   const week = currentWeek(p, t);
-  const missed = allSessions().filter((s) => s.date < t && !state.log[s.id]).slice(-3);
+  const missed = allSessions().filter((s) => s.date < t && !s.optional && !state.log[s.id]).slice(-3);
   const stats = recentStats(p, state.log, t);
 
   let weekBlock = '';
   if (week) {
-    const done = week.sessions.filter((s) => state.log[s.id]?.done);
+    const runs = week.sessions.filter((s) => !s.optional);
+    const done = runs.filter((s) => state.log[s.id]?.done);
     const doneKm = done.reduce((a, s) => a + (state.log[s.id].actualKm ?? s.km), 0);
     weekBlock = `<section class="card">
       <div class="row between"><h2>Semaine ${week.index + 1}</h2><span class="phase phase-${week.phase}">${PHASES[week.phase].label}${week.recovery ? ' · allégée' : ''}</span></div>
       <div class="meter"><div style="width:${Math.min(100, (doneKm / week.volumeKm) * 100)}%"></div></div>
-      <p class="muted">${doneKm.toFixed(1)} / ${week.volumeKm} km · ${done.length} / ${week.sessions.length} séances</p>
-      <div class="week-dots">${week.sessions.map((s) => `<a href="#/session/${s.id}" class="dot ${state.log[s.id]?.done ? 'done' : s.date < t ? 'missed' : ''} ${s.date === t ? 'today' : ''}" title="${esc(s.title)}">${TYPE_ICON[s.type]}</a>`).join('')}</div>
+      <p class="muted">${doneKm.toFixed(1)} / ${week.volumeKm} km · ${done.length} / ${runs.length} courses</p>
+      <div class="week-dots">${week.sessions.map((s) => `<a href="#/session/${s.id}" class="dot ${state.log[s.id]?.done ? 'done' : s.date < t ? 'missed' : ''} ${s.date === t ? 'today' : ''}" title="${esc(s.title)}">${iconOf(s)}</a>`).join('')}</div>
     </section>`;
   }
 
@@ -208,10 +211,10 @@ function renderPlan(openIdx) {
       lastPhase = w.phase;
       head = `<div class="phase-head phase-${w.phase}"><h2>${PHASES[w.phase].label}</h2><p>${esc(PHASES[w.phase].goal)}</p></div>`;
     }
-    const done = w.sessions.filter((s) => state.log[s.id]?.done).length;
+    const done = w.sessions.filter((s) => !s.optional && state.log[s.id]?.done).length;
     return `${head}<details class="week ${w === cur ? 'current' : ''}" ${w.index === open ? 'open' : ''} id="w${w.index}">
       <summary><span><strong>Semaine ${w.index + 1}</strong> <span class="muted">${esc(dateShort(w.start))}</span>${w.recovery ? ' <span class="badge">allégée</span>' : ''}${w.raceWeek ? ' <span class="badge race">course</span>' : ''}</span>
-      <span class="muted">${w.volumeKm} km${done ? ` · ${done}/${w.sessions.length} ✓` : ''}</span></summary>
+      <span class="muted">${w.volumeKm} km${done ? ` · ${done}/${w.sessions.filter((s) => !s.optional).length} ✓` : ''}</span></summary>
       <div class="week-sessions">${w.sessions.map((s) => sessionCard(s)).join('')}</div>
     </details>`;
   }).join('');
@@ -253,14 +256,14 @@ function renderSession(id) {
     <a href="#/plan" class="back">‹ Plan</a>
     <p class="muted">${esc(dateLong(s.date))}</p>
     <h1>${esc(s.title)}</h1>
-    <p class="big-meta">${s.km} km · ~${duration(s.min * 60)}</p>
+    ${s.optional ? '<p class="big-meta">Facultatif</p>' : `<p class="big-meta">${s.km} km · ~${duration(s.min * 60)}</p>`}
     <p>${esc(s.description)}</p>
-    ${stepsHTML(s.steps)}
-    <section class="card">
+    ${s.steps.length ? stepsHTML(s.steps) : ''}
+    ${s.optional ? '' : `<section class="card">
       <h2>Garmin</h2>
       <p class="muted">L'envoi direct vers la montre arrive à l'étape 2 (serveur de synchronisation).</p>
       <button class="btn" disabled>Envoyer vers ma montre</button>
-    </section>
+    </section>`}
     ${s.date <= t ? `<section class="card">
       <h2>Ton retour</h2>
       <form id="log-form">
@@ -269,11 +272,11 @@ function renderSession(id) {
           <label class="choice small"><input type="radio" name="feel" value="ok" ${e.feel === 'ok' ? 'checked' : ''}><span>Correct</span></label>
           <label class="choice small"><input type="radio" name="feel" value="hard" ${e.feel === 'hard' ? 'checked' : ''}><span>Dur</span></label>
         </div>
-        <label class="field">Distance réelle (km)<input type="number" inputmode="decimal" step="0.1" name="km" value="${e.actualKm ?? s.km}"></label>
+        ${s.optional ? '' : `<label class="field">Distance réelle (km)<input type="number" inputmode="decimal" step="0.1" name="km" value="${e.actualKm ?? s.km}"></label>`}
         <label class="field">Note (optionnel)<input type="text" name="note" value="${esc(e.note ?? '')}" maxlength="200"></label>
         <div class="actions">
-          <button type="button" class="btn ghost" id="skip">${e.skipped ? 'Annuler « sautée »' : 'Pas faite'}</button>
-          <button type="submit" class="btn primary">${e.done ? 'Mettre à jour' : 'Séance faite'}</button>
+          <button type="button" class="btn ghost" id="skip">${e.skipped ? 'Annuler' : s.optional ? 'Pas cette fois' : 'Pas faite'}</button>
+          <button type="submit" class="btn primary">${e.done ? 'Mettre à jour' : s.optional ? 'J\'y suis allé' : 'Séance faite'}</button>
         </div>
       </form>
     </section>` : '<p class="muted center">Tu pourras saisir ton retour le jour de la séance.</p>'}`;
@@ -282,7 +285,7 @@ function renderSession(id) {
     ev.preventDefault();
     const feel = form.querySelector('[name=feel]:checked')?.value;
     if (!feel) { toast('Indique ton ressenti : c\'est ce qui permet d\'adapter le plan.'); return; }
-    state.log[id] = { done: true, feel, actualKm: Number(form.km.value) || s.km, note: form.note.value.trim() || undefined, at: t };
+    state.log[id] = { done: true, feel, actualKm: s.optional ? undefined : Number(form.km.value) || s.km, note: form.note.value.trim() || undefined, at: t };
     persist();
     if (s.type === 'race') askRaceResult(s);
     else { toast('Séance enregistrée 💪'); history.back(); }
@@ -339,7 +342,7 @@ function renderProfile() {
         <button class="btn" id="redo">Refaire le questionnaire</button>
       </div>
     </section>
-    <p class="muted center small">Run Coach · v0.2</p>`;
+    <p class="muted center small">Run Coach · v0.3</p>`;
 
   view.querySelector('#new-race').addEventListener('click', () => {
     showSheet(`<h2>Nouveau chrono</h2><form id="nr">

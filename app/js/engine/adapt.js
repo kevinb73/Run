@@ -12,7 +12,7 @@ import { addDays, mondayOf, daysBetween } from './dates.js';
 export function recentStats(plan, log, today) {
   const from = addDays(today, -14);
   const planned = plan.weeks.flatMap((w) => w.sessions)
-    .filter((s) => s.date >= from && s.date < today && s.type !== 'race');
+    .filter((s) => s.date >= from && s.date < today && s.type !== 'race' && !s.optional);
   const entries = planned.map((s) => ({ s, e: log[s.id] }));
   const done = entries.filter((x) => x.e?.done);
   const feels = done.map((x) => x.e.feel).filter(Boolean);
