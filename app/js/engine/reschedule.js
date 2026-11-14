@@ -124,3 +124,34 @@ export function shortenEasy(plan, id, factor = 0.67) {
   week.volumeKm = Math.round(week.sessions.reduce((a, x) => a + x.km, 0) * 10) / 10;
   return copy;
 }
+
+/**
+ * Séance bonus : un footing facile ajouté aujourd'hui SANS toucher au reste du plan.
+ * Possible si aucune course n'est prévue aujourd'hui, pas de bonus déjà ajouté, et le plan n'est pas terminé.
+ */
+export function canAddBonus(plan, log, today) {
+  const all = plan.weeks.flatMap((w) => w.sessions);
+  const lastDay = addDays(plan.weeks.at(-1).start, 6);
+  if (today > lastDay) return false;
+  return !all.some((s) => s.date === today && !s.optional && s.type !== 'sport' && !log[s.id]?.skipped);
+}
+
+export function addBonus(plan, today) {
+  const copy = structuredClone(plan);
+  const week = copy.weeks.find((w) => today >= w.start && today < addDays(w.start, 7)) ?? copy.weeks[0];
+  // Durée : le footing le plus court à venir, plafonné à ~25 min (minimum 2 km).
+  const easies = copy.weeks.flatMap((w) => w.sessions).filter((s) => s.type === 'easy' && s.date >= today).slice(0, 3);
+  const E = week.paces.E;
+  const km25 = (25 * 60) / ((E[0] + E[1]) / 2); // ~25 min à allure footing
+  const km = Math.max(2, Math.min(...easies.map((s) => s.km), km25));
+  const s = easyRun({ paces: week.paces }, Number.isFinite(km) ? km : 3);
+  const est = estimate(s.steps, week.paces);
+  const bonus = {
+    id: `bonus-${today}`, date: today, ...s,
+    title: 'Footing bonus',
+    description: 'Séance en plus du plan : reste très facile, elle ne remplace rien.',
+    km: est.km, min: est.min, bonus: true,
+  };
+  week.sessions = [...week.sessions, bonus].sort((a, b) => a.date.localeCompare(b.date));
+  return { plan: copy, id: bonus.id };
+}

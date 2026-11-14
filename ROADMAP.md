@@ -131,6 +131,7 @@ Niche la plus prometteuse : **préparation physique des arbitres** (tests obliga
 | v0.16 | Nouvelle identité visuelle (noir / volt, Anton + Inter, icônes dessinées, séance du jour en premier) |
 | v0.17–v0.18 | Écran Aujourd'hui plus sobre (titre réduit, bouton volt adouci) |
 | v0.19 | Petite base (sortie max < 6 km) : plan calé sur le niveau réel (≈ 20–30 min/séance au départ, sortie longue +15 %/sem., Fondation sans séance de qualité) |
+| v0.20–v0.21 | Séance avancée avant le début du plan reconnue ; « Courir en plus aujourd'hui » (footing bonus ~25 min sans rien décaler) |
 
 ## Coûts récurrents
 

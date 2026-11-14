@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { vdotFromPerformance, predictTime, trainingPaces } from '../app/js/engine/vdot.js';
 import { generatePlan, allocatePhases, assignDays, RACES } from '../app/js/engine/plan.js';
 import { applyActivities } from '../app/js/engine/garminsync.js';
-import { moveSession } from '../app/js/engine/reschedule.js';
+import { moveSession, addBonus, canAddBonus } from '../app/js/engine/reschedule.js';
 import { adaptPlan } from '../app/js/engine/adapt.js';
 
 const TODAY = '2026-11-14';
@@ -458,4 +458,20 @@ test('séance avancée avant le début du plan : la course du jour est bien reco
   const r = applyActivities(moved, {}, [act], {});
   assert.notEqual(r.known.a1, 'pre-plan');
   assert.ok(r.log[first.id]?.done, 'séance cochée');
+});
+
+test('footing bonus : ajouté aujourd\'hui sans déplacer le plan, reconnu à l\'import', () => {
+  const plan = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, weeklyKm: 5, longestRunKm: 3 }, { today: TODAY });
+  assert.ok(canAddBonus(plan, {}, TODAY));
+  const before = plan.weeks.flatMap((w) => w.sessions).map((s) => `${s.id}@${s.date}`);
+  const { plan: p2, id } = addBonus(plan, TODAY);
+  const after = p2.weeks.flatMap((w) => w.sessions);
+  assert.deepEqual(after.filter((s) => s.id !== id).map((s) => `${s.id}@${s.date}`), before);
+  const b = after.find((s) => s.id === id);
+  assert.equal(b.date, TODAY); assert.ok(b.min <= 27, `bonus ${b.min} min`);
+  assert.ok(!canAddBonus(p2, {}, TODAY), 'pas deux bonus le même jour');
+  const r = applyActivities(p2, {}, [{ id: 'a1', date: TODAY, start: `${TODAY}T15:00:00`, type: 'running', distanceKm: 2.4, durationSec: 1320 }], {});
+  assert.ok(r.log[id]?.done, 'bonus coché');
+  const first = plan.weeks[0].sessions.find((s) => s.km);
+  assert.ok(!r.log[first.id], 'la séance de lundi reste à faire');
 });
