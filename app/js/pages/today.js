@@ -174,7 +174,7 @@ export function renderToday() {
   bindCoachBlocks(t, next, makeup);
   bindCareBlocks(t);
   bindCelebration(view, renderToday);
-  view.querySelector('#push-week')?.addEventListener('click', () => pushWeek());
+  view.querySelector('#push-week')?.addEventListener('click', () => pushWeek({ retry: true }));
   view.querySelector('#sync-now')?.addEventListener('click', () => syncActivities(true));
   syncActivities(false).then(async () => {
     weeklyCoach();

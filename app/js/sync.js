@@ -83,7 +83,11 @@ export let pushing = false;
 /** Envoie sur la montre les séances des 8 prochains jours qui n'y sont pas encore (silencieux si rien à faire). */
 const pushFailed = new Set();
 
-export async function pushWeek({ silent = false } = {}) {
+/** Séances des prochains jours pas encore sur la montre (hors envois refusés pendant cette ouverture de l'app). */
+export const pendingPush = (t) => toPush(t).filter((s) => state.pushed[s.id]?.date !== s.date && !pushFailed.has(`${s.id}@${s.date}`));
+
+export async function pushWeek({ silent = false, retry = false } = {}) {
+  if (retry) pushFailed.clear(); // bouton « Envoyer » : on retente tout
   if (!garminOn() || pushing) return;
   await cleanup;
   // Une séance refusée par le serveur n'est pas retentée avant la prochaine ouverture de l'app (évite toute boucle).
@@ -104,7 +108,12 @@ export async function pushWeek({ silent = false } = {}) {
   } finally {
     pushing = false;
   }
-  if (!ok) return; // rien de nouveau sur la montre : pas besoin de réafficher l'écran
+  if (!ok) {
+    // Rien d'envoyé : on rend le bouton (sans réafficher l'écran, ce qui relancerait l'envoi en boucle).
+    if (btn?.isConnected) { btn.disabled = false; btn.textContent = 'Envoyer sur ma montre'; }
+    if (!silent) toast('Envoi impossible pour le moment (serveur en cours de mise à jour ?). Réessaie plus tard.');
+    return;
+  }
   toast(`${ok} séance(s) envoyée(s) sur ta montre.`);
   if (location.hash === '' || location.hash === '#/') route();
 }
