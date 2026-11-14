@@ -1,6 +1,6 @@
 # Feuille de route — Run Coach
 
-_Dernière mise à jour : 14 novembre 2026 · version en ligne : **v0.15**_
+_Dernière mise à jour : 14 novembre 2026 · app en ligne : **v0.15** · serveur : **64abd20**_
 
 Principe : **on n'ajoute une fonction que si elle sert la régularité, la progression ou la prévention des blessures.**
 Les priorités sont revues après chaque bloc de 2–3 semaines de course réelle.
@@ -59,6 +59,21 @@ Coût : 0 € (abonnement ChatGPT existant). Points d'attention : confidentialit
 | 3.3 | **Renforcement & mobilité** (2 × 15 min / sem.) envoyés sur la montre | Chevilles, genoux, tendons : le risque n° 1 avec le futsal | Moyen |
 | 3.4 | Indisponibilités ponctuelles (« pas dispo jeudi ») | Redistribuer la semaine | Petit |
 
+### 3.5 — Préparation au Yo-Yo test d'arbitre (priorité de la phase 3)
+
+Objectif : réussir le **Yo-Yo test de début de saison (septembre 2027)**, quel que soit le mode choisi (remise en forme ou course).
+
+| Élément | Détail |
+|---|---|
+| Option de profil | « Je suis arbitre » : date du test, variante du Yo-Yo test, palier requis pour la catégorie |
+| Bloc spécifique | 8–10 semaines avant le test (≈ début juillet) : intermittent 15/15 et 30/30, navettes avec demi-tours, sprints répétés, affûtage la dernière semaine |
+| Tests blancs | Toutes les 4–6 semaines, protocole + bande-son dans l'app, saisie du palier atteint |
+| Estimation de réussite | Courbe des tests blancs vs palier requis, tendance et date estimée d'atteinte (mesure réelle plutôt que formule VMA → Yo-Yo, peu fiable pour ce profil) |
+| Prérequis | **Circulaire CDA/CRA** : variante exacte (IR1 ou dynamique), palier requis pour ta catégorie, date du test |
+| Calendrier | Construire au printemps 2027 ; bloc spécifique à partir de juillet 2027 |
+
+Piste commerciale associée : niche « préparation physique des arbitres » (voir phase 6).
+
 ---
 
 ## Phase 4 — Confort et motivation
@@ -71,6 +86,17 @@ Coût : 0 € (abonnement ChatGPT existant). Points d'attention : confidentialit
 | 4.4 | Ajustement chaleur (> 25 °C) | Utile à partir du printemps | Petit |
 
 ---
+
+## Phase 6 — Exploration commerciale (à décider après 2–3 mois d'usage)
+
+| Étape | Critère de passage |
+|---|---|
+| 6.1 Usage perso régulier pendant 2–3 mois | Tu l'utilises vraiment chaque semaine |
+| 6.2 Bêta gratuite : 5–10 personnes (futsal, arbitres) | ≥ 50 % l'utilisent encore après 1 mois, plusieurs demandent à continuer |
+| 6.3 Étude : API Garmin officielle (programme développeur), RGPD données de santé, statut juridique, prix (≈ 5–10 €/mois) | Accès Garmin officiel obtenu |
+| 6.4 Refonte multi-utilisateurs (comptes, base de données, paiement) | — |
+
+Niche la plus prometteuse : **préparation physique des arbitres** (tests obligatoires, réseau structuré, peu de solutions dédiées).
 
 ## Phase 5 — Plus tard / à arbitrer
 
