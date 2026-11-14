@@ -238,8 +238,8 @@ function feelPrompt(t) {
   }).join('')}</section>`;
 }
 
-// Fenêtre d'envoi automatique : aujourd'hui + 7 jours (la semaine complète suivante est toujours couverte).
-const PUSH_DAYS = 7;
+// Fenêtre d'envoi automatique : aujourd'hui + 8 jours, pour qu'un samedi la sortie longue du dimanche suivant soit couverte.
+const PUSH_DAYS = 8;
 const toPush = (t) => allSessions().filter((s) => !s.optional && s.date >= t && s.date <= addDays(t, PUSH_DAYS) && !state.log[s.id]?.done);
 
 function garminTodayBlock(t) {
@@ -248,8 +248,8 @@ function garminTodayBlock(t) {
   const missing = soon.filter((s) => state.pushed[s.id]?.date !== s.date).length;
   const last = state.lastSync ? new Date(state.lastSync).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—';
   return `<section class="card"><div class="row between"><h2>⌚ Garmin</h2><span class="muted small">Synchro ${last}</span></div>
-    ${missing ? `<p class="muted">${missing} séance(s) des 8 prochains jours pas encore sur ta montre.</p><button class="btn primary" id="push-week">Envoyer sur ma montre</button>`
-      : soon.length ? '<p class="muted">Les séances des 8 prochains jours sont sur ta montre ✓ (envoi automatique à chaque ouverture)</p>' : ''}
+    ${missing ? `<p class="muted">${missing} séance(s) des 9 prochains jours pas encore sur ta montre.</p><button class="btn primary" id="push-week">Envoyer sur ma montre</button>`
+      : soon.length ? '<p class="muted">Les séances des 9 prochains jours sont sur ta montre ✓ (envoi automatique à chaque ouverture)</p>' : ''}
     <button class="btn ghost" id="sync-now">Récupérer mes courses</button>
     ${state.syncNotices?.length ? `<ul class="adj">${state.syncNotices.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}</section>`;
 }
