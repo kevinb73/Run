@@ -5,7 +5,7 @@ import { canAddBonus, addBonus, canMoveToToday, moveSession, downgradeToEasy, fi
 import { applyActivities } from './engine/garminsync.js';
 import { analyzeSession, applyVerdict, QUALITY_TYPES } from './engine/analysis.js';
 import { applyEasyFeedback } from './engine/easyfeedback.js';
-import { loadStatus, activityLoad, LOAD_LABELS } from './engine/load.js';
+import { loadStatus, activityLoad, manualActivities, LOAD_LABELS } from './engine/load.js';
 import { readinessAdvice, formClass, LEVEL_FR, HRV_FR } from './engine/readiness.js';
 import { api, sessionPayload } from './garmin.js';
 import { lineChart, volumeChart as weeklyVolumeChart, progressData } from './progress.js';
@@ -419,7 +419,7 @@ function coachBlock(t) {
   }).join('')}</section>`;
 }
 
-const currentLoad = () => loadStatus(Object.values(state.acts), today(), state.hr);
+const currentLoad = () => loadStatus([...Object.values(state.acts), ...manualActivities(state.plan, state.log)], today(), state.hr);
 
 function loadBlock(t) {
   if (!garminOn() || !Object.keys(state.acts).length) return '';
@@ -883,6 +883,8 @@ function renderSession(id) {
   if (!s) { view.innerHTML = '<p>Séance introuvable.</p>'; return; }
   const e = state.log[id] ?? {};
   const t = today();
+  // Sport (séance futsal/arbitrage, ou jour « course OU sport ») : durée saisissable si pas de montre.
+  const sportKind = s.type === 'sport' ? s.sport : s.alt ?? null;
   view.innerHTML = `
     <a href="#/plan" class="back">‹ Plan</a>
     <p class="muted">${esc(dateLong(s.date))}</p>
@@ -907,6 +909,7 @@ function renderSession(id) {
           <label class="choice small"><input type="radio" name="feel" value="ok" ${e.feel === 'ok' ? 'checked' : ''}><span>Correct</span></label>
           <label class="choice small"><input type="radio" name="feel" value="hard" ${e.feel === 'hard' ? 'checked' : ''}><span>Dur</span></label>
         </div>
+        ${sportKind ? `<label class="field">Durée ${sportKind === 'referee' ? 'de l\'arbitrage' : `du ${esc(SPORTS[sportKind].label.toLowerCase())}`} (min)<small class="muted"> · sans montre, compte dans ta charge</small><input type="number" inputmode="numeric" name="sportMin" min="0" max="300" value="${e.sportMin ?? ''}" placeholder="ex. 60"></label>` : ''}
         ${s.optional ? '' : `<label class="field">Distance réelle (km)<input type="number" inputmode="decimal" step="0.1" name="km" value="${e.actualKm ?? s.km}"></label>`}
         ${s.optional ? '' : painFields(e.pain)}
         <label class="field">Note (optionnel)<input type="text" name="note" value="${esc(e.note ?? '')}" maxlength="200"></label>
@@ -922,7 +925,7 @@ function renderSession(id) {
     ev.preventDefault();
     const feel = form.querySelector('[name=feel]:checked')?.value;
     if (!feel) { toast('Indique ton ressenti : c\'est ce qui permet d\'adapter le plan.'); return; }
-    state.log[id] = { ...e, done: true, skipped: undefined, feel, actualKm: s.optional ? undefined : Number(form.km.value) || s.km, note: form.note.value.trim() || undefined, at: t, pain: readPain(form) ?? e.pain };
+    state.log[id] = { ...e, done: true, skipped: undefined, feel, actualKm: s.optional ? undefined : Number(form.km.value) || s.km, note: form.note.value.trim() || undefined, at: t, pain: readPain(form) ?? e.pain, ...(s.optional ? { sportMin: readSportMin(form) } : {}) };
     persist();
     if (s.type === 'race') askRaceResult(s);
     else if (s.type === 'test') askTestResult(s);
@@ -938,7 +941,7 @@ function renderSession(id) {
   view.querySelector('#replaced')?.addEventListener('click', () => {
     const feel = form.querySelector('[name=feel]:checked')?.value;
     if (!feel) { toast(`Indique ton ressenti sur le ${SPORTS[s.alt].label.toLowerCase()}.`); return; }
-    state.log[id] = { done: true, replacedBy: s.alt, feel, actualKm: 0, note: form.note.value.trim() || undefined, at: t };
+    state.log[id] = { done: true, replacedBy: s.alt, feel, actualKm: 0, note: form.note.value.trim() || undefined, at: t, sportMin: readSportMin(form) };
     persist();
     toast(`${SPORTS[s.alt].label} enregistré.`);
     history.back();
@@ -1050,6 +1053,12 @@ function painFields(pain) {
   return `<div class="pain-fields"><p class="field-label">Douleur</p>
     <div class="choices pain-levels">${Object.entries(PAIN_LEVELS).map(([v, l]) => `<label class="choice small"><input type="radio" name="painLevel" value="${v}" ${Number(v) === lvl ? 'checked' : ''}><span>${esc(l.split(' (')[0])}</span></label>`).join('')}</div>
     <label class="field pain-zone" ${lvl ? '' : 'hidden'}>Où ?<select name="painZone">${Object.entries(PAIN_ZONES).map(([k, l]) => `<option value="${k}" ${pain?.zone === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label></div>`;
+}
+
+/** Durée saisie pour un sport sans montre (minutes), ou undefined. */
+function readSportMin(form) {
+  const v = Number(form.querySelector('[name=sportMin]')?.value);
+  return v > 0 ? Math.min(300, Math.round(v)) : undefined;
 }
 
 function readPain(form) {
@@ -1236,7 +1245,7 @@ function renderProfile() {
         <button class="btn" id="redo">Refaire le questionnaire</button>
       </div>
     </section>
-    <p class="muted center small">Run Coach · v0.23</p>`;
+    <p class="muted center small">Run Coach · v0.24</p>`;
 
   bindGarminProfile();
   view.querySelector('#pause-btn')?.addEventListener('click', pauseSheet);
