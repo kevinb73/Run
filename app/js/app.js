@@ -8,6 +8,7 @@ import { loadStatus, activityLoad, LOAD_LABELS } from './engine/load.js';
 import { readinessAdvice, formClass, LEVEL_FR, HRV_FR } from './engine/readiness.js';
 import { api, sessionPayload } from './garmin.js';
 import { lineChart, volumeChart as weeklyVolumeChart, progressData } from './progress.js';
+import { buildRecap } from './engine/recap.js';
 import { vdotFromPerformance, predictTime } from './engine/vdot.js';
 import { todayISO, daysBetween, addDays, mondayOf } from './engine/dates.js';
 import { visibleSteps, defaultDraft } from './onboarding.js';
@@ -116,6 +117,7 @@ function route() {
     case 'session': return renderSession(arg);
     case 'profile': return renderProfile();
     case 'progress': return renderProgress();
+    case 'recap': return renderRecap(arg);
     default: return renderToday();
   }
 }
@@ -323,6 +325,7 @@ async function analyzePending() {
   analyzing = true;
   const t = today();
   let changed = false;
+  let openRecap = null;
   try {
     const todo = allSessions().filter((s) => {
       const e = state.log[s.id];
@@ -341,14 +344,21 @@ async function analyzePending() {
         const next = allSessions().filter((x) => x.adjustedFrom && x.type === s.type && x.date > s.date)[0];
         if (next) repushIfNeeded([next.id]);
       }
-      state.log[s.id] = { ...e, analysis: { verdict: a.verdict, details: a.details, note: r.note, source: a.source } };
+      state.log[s.id] = { ...e, ...(laps ? { laps } : {}), analysis: { verdict: a.verdict, details: a.details, note: r.note, source: a.source } };
+      if (s.date >= addDays(t, -1) && !e.recapShown) openRecap = s.id;
       state.coachNotes = [{ date: s.date, id: s.id }, ...state.coachNotes.filter((n) => n.id !== s.id)].slice(0, 6);
       changed = true;
     }
   } finally {
     analyzing = false;
   }
-  if (changed) { persist(); if (location.hash === '' || location.hash === '#/') renderToday(); }
+  if (changed) {
+    persist();
+    const onToday = location.hash === '' || location.hash === '#/';
+    // Après une séance du jour (ou d'hier) : le récap s'ouvre tout seul.
+    if (openRecap && onToday) location.hash = `#/recap/${openRecap}`;
+    else if (onToday) renderToday();
+  }
 }
 
 function coachBlock(t) {
@@ -356,7 +366,7 @@ function coachBlock(t) {
   if (!notes.length) return '';
   return `<section class="card"><h2>Analyse de tes séances</h2>${notes.map(({ s, a }) => {
     const v = VERDICT[a.verdict] ?? VERDICT.unknown;
-    return `<a class="coach-row" href="#/session/${s.id}"><span class="verdict ${v.cls}">${v.icon} ${v.label}</span>
+    return `<a class="coach-row" href="#/recap/${s.id}"><span class="verdict ${v.cls}">${v.icon} ${v.label}</span>
       <span><strong>${esc(s.title)}</strong> <span class="muted">· ${esc(dateShort(s.date))}</span><small>${esc(frDates(a.note ?? a.details[0] ?? ''))}</small></span></a>`;
   }).join('')}</section>`;
 }
@@ -823,6 +833,7 @@ function renderSession(id) {
     ${s.adjustedFrom ? `<p class="muted small">Ajustée après ta dernière séance du même type (prévue : « ${esc(s.adjustedFrom)} »).</p>` : ''}
     ${s.shortened ? '<p class="muted small">Raccourcie : forme du jour basse.</p>' : ''}
     ${analysisCard(state.log[s.id]?.analysis)}
+    ${state.log[s.id]?.done && !state.log[s.id]?.replacedBy ? `<a class="btn recap-btn" href="#/recap/${s.id}">Voir le récap de la séance</a>` : ''}
     ${s.optional ? '' : garminSessionCard(s)}
     ${s.date <= t ? `<section class="card">
       <h2>Ton retour</h2>
@@ -924,6 +935,38 @@ function askRaceResult(s) {
   });
 }
 
+// ---------------- Récap de séance ----------------
+
+function renderRecap(id) {
+  const s = findSession(id);
+  const e = state.log[id];
+  if (!s || !e?.done) { view.innerHTML = '<p>Récap indisponible.</p>'; return; }
+  if (!e.recapShown) { state.log[id] = { ...e, recapShown: true }; persist(); }
+  const next = allSessions().find((x) => x.date > s.date && !x.optional && !state.log[x.id]);
+  const r = buildRecap(s, e, {
+    paces: weekOf(s.date)?.paces,
+    hr: state.hr,
+    next: next ? { title: next.title, dateLabel: dateLong(next.date) } : null,
+  });
+  const v = VERDICT[e.analysis?.verdict] ?? null;
+  const st = { ok: '✓', slow: '⚠ lent', fast: '⚠ rapide' };
+  view.innerHTML = `
+    <a href="#/" class="back">‹ Aujourd'hui</a>
+    <p class="muted">${esc(dateLong(s.date))}${e.source === 'garmin' ? ' · données Garmin' : ''}</p>
+    <div class="row between"><h1>${esc(s.title)}</h1>${v ? `<span class="verdict ${v.cls}">${v.icon} ${v.label}</span>` : ''}</div>
+    <section class="card recap-conclusion"><h2>Le mot du coach</h2>${r.conclusion.map((c) => `<p>${esc(frDates(c))}</p>`).join('')}</section>
+    ${r.stats.length ? `<div class="stat-grid">${r.stats.map((x) => `<div class="stat"><span class="stat-value">${esc(x.value)}</span><span class="stat-label">${esc(x.label)}</span></div>`).join('')}</div>`
+      : '<section class="card note"><p>Séance saisie à la main : connecte ta montre pour avoir les chiffres détaillés.</p></section>'}
+    ${r.compare.length ? `<section class="card"><h2>Prévu / réalisé</h2><table class="compare">
+      ${r.compare.map((c) => `<tr><td>${esc(c.label)}</td><td class="muted">${esc(c.planned)}</td><td><strong>${esc(c.done)}</strong></td><td>${c.ok ? '✓' : '⚠'}</td></tr>`).join('')}</table></section>` : ''}
+    ${r.steps ? `<section class="card"><h2>Étape par étape</h2><ol class="recap-steps">${r.steps.map((x) => `
+      <li class="${x.status ?? ''}"><span><strong>${esc(x.label)}</strong> <span class="muted">${esc(x.planned)}${x.target ? ` · cible ${esc(x.target)}` : ''}</span></span>
+      <span>${esc(x.actual)}${x.hr ? ` · ${x.hr} bpm` : ''} ${x.status ? `<b>${st[x.status]}</b>` : ''}</span></li>`).join('')}</ol></section>`
+      : QUALITY_TYPES.includes(s.type) ? '<p class="muted small">Lance la séance depuis ta montre pour avoir le détail répétition par répétition.</p>' : ''}
+    ${e.analysis?.details?.length ? `<section class="card"><h2>Analyse détaillée</h2><ul class="adj">${e.analysis.details.map((d) => `<li>${esc(d)}</li>`).join('')}</ul></section>` : ''}
+    ${e.calories ? '<p class="muted small center">Calories : estimation Garmin (±10–20 %).</p>' : ''}`;
+}
+
 // ---------------- Progrès ----------------
 
 function renderProgress() {
@@ -1006,7 +1049,7 @@ function renderProfile() {
         <button class="btn" id="redo">Refaire le questionnaire</button>
       </div>
     </section>
-    <p class="muted center small">Run Coach · v0.12</p>`;
+    <p class="muted center small">Run Coach · v0.13</p>`;
 
   bindGarminProfile();
   view.querySelector('#g-restore')?.addEventListener('click', () => {

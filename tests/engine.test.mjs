@@ -351,3 +351,26 @@ test('rattrapage : séance clé manquée replacée sur un footing sûr, sinon ab
   busy.profile.otherSports = [0, 1, 2, 3, 4, 5, 6].map((day) => ({ day, kind: 'futsal' }));
   assert.equal(findSafeDay(busy, {}, missed.id, today), null);
 });
+
+test('récap : chiffres, prévu/réalisé, étapes et conclusion', async () => {
+  const { buildRecap } = await import('../app/js/engine/recap.js');
+  const { flattenSteps } = await import('../app/js/engine/analysis.js');
+  const plan = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, easyPaceSec: 510 }, { today: TODAY });
+  const w = plan.weeks[1];
+  const easy = w.sessions.find((s) => s.type === 'easy');
+  const entry = { done: true, feel: 'ok', source: 'garmin', actualKm: easy.km, durationSec: easy.km * 530, paceSecPerKm: 530, avgHr: 150, maxHr: 165, calories: 380, elevationGainM: 12, cadence: 158, trainingEffect: 2.3, analysis: { verdict: 'success', details: [] } };
+  const r = buildRecap(easy, entry, { paces: w.paces, hr: { maxHr: 190 }, next: { title: 'Sortie longue', dateLabel: 'dimanche 29 novembre' } });
+  assert.ok(r.stats.some((s) => s.label === 'Calories' && s.value === '380 kcal'));
+  assert.ok(r.compare.every((c) => c.ok));
+  assert.ok(r.conclusion[0].startsWith('Footing réussi'));
+  assert.ok(r.conclusion.some((c) => c.includes('79 % de ta FC max')));
+  assert.ok(r.conclusion.at(-1).includes('Prochaine séance : Sortie longue'));
+  // Étapes : séance structurée lancée depuis la montre (un tour par étape)
+  const hills = plan.weeks.flatMap((x) => x.sessions).find((s) => s.type === 'fartlek' || s.type === 'hills');
+  const laps = flattenSteps(hills.steps).map((st) => ({ distanceM: st.dur.type === 'distance' ? st.dur.m : 200, durationSec: st.dur.type === 'time' ? st.dur.s : 600, avgHr: 150 }));
+  const r2 = buildRecap(hills, { done: true, feel: 'ok', laps }, { paces: w.paces });
+  assert.equal(r2.steps.length, laps.length);
+  // Séance manuelle : pas de chiffres Garmin, mais une conclusion
+  const r3 = buildRecap(easy, { done: true, feel: 'hard', actualKm: 2 }, { paces: w.paces });
+  assert.ok(r3.conclusion.length >= 2);
+});

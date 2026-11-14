@@ -323,3 +323,21 @@ a { color: inherit; }
 .key { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: -1px; }
 .key-done { background: var(--accent); }
 .key-plan { background: var(--surface-2); border: 1px solid var(--border); }
+
+/* ----- Récap ----- */
+.recap-conclusion { border-color: var(--accent); }
+.recap-conclusion p { margin: 6px 0; }
+.stat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 12px 0; }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 10px 12px; display: flex; flex-direction: column; }
+.stat-value { font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stat-label { font-size: 0.75rem; color: var(--muted); }
+.compare { width: 100%; border-collapse: collapse; }
+.compare td { padding: 8px 4px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+.compare tr:last-child td { border-bottom: none; }
+.recap-steps { list-style: none; padding: 0; margin: 0; }
+.recap-steps li { display: flex; flex-direction: column; gap: 2px; padding: 8px 0 8px 10px; border-bottom: 1px solid var(--border); border-left: 3px solid var(--border); font-size: 0.9rem; }
+.recap-steps li.ok { border-left-color: var(--ok); }
+.recap-steps li.slow, .recap-steps li.fast { border-left-color: var(--z-r); }
+.recap-steps li b { color: var(--z-r); font-weight: 700; }
+.recap-steps li.ok b { color: var(--ok); }
+.recap-btn { width: 100%; margin: 4px 0 8px; }
