@@ -20,14 +20,30 @@ import app as srv  # noqa: E402
 import test_server  # noqa: E402
 
 fake = test_server.FakeGarmin()
-state = {"activities": []}
+state = {"activities": [], "fail": None}
 fake.get_activities_by_date = lambda start, end, *a, **k: list(state["activities"])
+_upload = fake.upload_workout
+
+
+def upload(payload):
+    if state["fail"] and state["fail"] in (payload.get("workoutName") or ""):
+        raise RuntimeError("refus simulé")
+    return _upload(payload)
+
+
+fake.upload_workout = upload
 srv._garmin = fake
 
 
 @srv.app.post("/__test/activities")
 def set_activities(acts: list = Body(...)):
     state["activities"] = acts
+    return {"ok": True}
+
+
+@srv.app.post("/__test/fail")
+def set_fail(body: dict = Body(...)):
+    state["fail"] = body.get("pattern")
     return {"ok": True}
 
 
