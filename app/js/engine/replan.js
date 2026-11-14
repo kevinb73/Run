@@ -10,7 +10,7 @@ import { currentWeek } from './adapt.js';
 
 const DAY_FR = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
 
-export function replanDays(plan, log, today, patch) {
+export function replanDays(plan, log, today, patch, opts = {}) {
   const profile = { ...plan.profile, ...patch };
   if (plan.mode === 'fitness' && profile.raceDate && patch.longRunDay != null) {
     profile.raceDate = addDays(mondayOf(profile.raceDate), profile.longRunDay);
@@ -18,6 +18,9 @@ export function replanDays(plan, log, today, patch) {
   const notStarted = today < plan.weeks[0].start;
   const cur = notStarted ? plan.weeks[0] : (currentWeek(plan, today) ?? plan.weeks.find((w) => w.start > today));
   if (!cur) throw new Error('Plan terminé : refais un nouveau cycle.');
+
+  // Reprise de la course : on recalcule sur les semaines restantes (sinon la progression repartirait de zéro).
+  if (profile.fitnessGoal === 'restart' && !notStarted) profile.durationWeeks = Math.max(4, plan.weeks.at(-1).index - cur.index + 1);
 
   let fresh;
   if (notStarted) {
@@ -34,15 +37,18 @@ export function replanDays(plan, log, today, patch) {
   const keepOld = (s) => s.date < today || log?.[s.id]?.done || log?.[s.id]?.skipped;
   const before = plan.weeks.filter((w) => w.start < cur.start);
   const merged = fresh.weeks.map((w) => {
-    if (w.start !== cur.start || notStarted) return w;
+    if (w.start !== cur.start) return w;
     const old = cur.sessions.filter(keepOld);
     const ids = new Set(old.map((s) => s.id));
     const add = w.sessions.filter((s) => (doneToday ? s.date > today : s.date >= today) && !ids.has(s.id));
+    // Footing bonus à venir (ajouté à la main) : conservé.
+    const bonus = cur.sessions.filter((s) => s.bonus && !keepOld(s) && !add.some((x) => x.id === s.id));
+    add.push(...bonus);
     return { ...w, sessions: [...old, ...add].sort((a, b) => a.date.localeCompare(b.date)) };
   });
 
   const days = [...profile.days].sort((a, b) => a - b).map((d) => DAY_FR[d]).join(', ');
-  const reasons = [`Jours modifiés : course le ${days}, sortie longue le ${DAY_FR[profile.longRunDay]}. Historique conservé, la suite est recalculée.`];
+  const reasons = [opts.reason ?? `Jours modifiés : course le ${days}, sortie longue le ${DAY_FR[profile.longRunDay]}. Historique conservé, la suite est recalculée.`];
   const adjustment = { date: today, reasons, vdotBefore: cur.vdot, vdotAfter: cur.vdot, changed: true };
   return {
     plan: {

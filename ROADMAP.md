@@ -13,6 +13,7 @@ Les priorités sont revues après chaque bloc de 2–3 semaines de course réell
 
 - **App** : PWA dans `app/` (vanilla JS, aucune dépendance), publiée par GitHub Pages sur `kevinb73.github.io/Run/`. Version **v0.16** = nouvelle identité visuelle (style Nike Run Club : noir, volt `#d7ff1f`, Anton + Inter, icônes SVG `app/js/icons.js`, séance du jour en premier).
 - **Serveur** : `server/` (FastAPI + garminconnect) sur Hetzner CPX02 Helsinki, `https://95-217-212-42.sslip.io` ; `/health` affiche la version du code ; mise à jour automatique horaire depuis `main` (ou redémarrage via l'API Hetzner). La clé d'accès du serveur n'est **pas** dans le dépôt : elle est saisie dans l'app (Profil) ; le jeton API Hetzner est un secret de l'environnement Claude « Run ».
+- **Mises à jour du moteur** : si une nouveauté change le contenu des plans, incrémenter `ENGINE_VERSION` (plan.js) et ajouter une ligne dans `ENGINE_NOTES` (upgrade.js) : les plans existants sont recalculés pour la suite, sans perte d'historique.
 - **Tests** : `npm test` (moteur, dont test de robustesse 600 profils) ; `python -m unittest server/test_server.py`.
 - **Utilisateur** : coureur irrégulier qui reprend, futsal mercredi + dimanche (jours « course OU futsal »), arbitre (match le samedi), Forerunner 965, iPhone. Allure footing déclarée ~8'30–9'00/km ; sa base réelle (durée de course continue) est à confirmer après la séance du lundi 16 novembre → éventuellement repasser en mode « Reprendre la course » ou baisser l'allure.
 - **Prochaines actions** : valider la v0.16 en main propre et ajuster le design écran par écran ; recalibrer le plan après les premières séances ; avant le 20 décembre : veille du test VMA allégée (3.1).
@@ -137,6 +138,7 @@ Niche la plus prometteuse : **préparation physique des arbitres** (tests obliga
 | v0.23–v0.24 | Plus de 2e course proposée le même jour ; futsal / arbitrage notés sans montre : durée + ressenti comptés dans la charge (méthode RPE) |
 | v0.25 | Écran Aujourd'hui centré sur le jour : « Séance faite ✓ » (résumé + récap) ou « Repos », prochaine séance en carte compacte |
 | v0.26 | Renforcement chevilles / genoux / hanches (2 × 15 min, 3 niveaux, sur la montre) ; « Mes jours » : changer jours de course / sports sans refaire le plan |
+| v0.27 | Plans « à l'épreuve des mises à jour » : version du moteur, recalcul automatique de la suite à chaque nouveauté, historique et bonus conservés |
 
 ## Coûts récurrents
 

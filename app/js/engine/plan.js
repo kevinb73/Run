@@ -30,6 +30,13 @@ export const PHASES = {
   restart: { label: 'Reprise', goal: 'Alterner marche et course pour habituer le corps en douceur.' },
 };
 
+/**
+ * Version du moteur de plan. À incrémenter quand une nouveauté change le CONTENU des plans
+ * (ex. ajout du renforcement) : les plans existants sont alors recalculés automatiquement pour la suite,
+ * sans perdre l'historique (voir upgrade.js).
+ */
+export const ENGINE_VERSION = 2;
+
 export const SPORTS = {
   futsal: { label: 'Futsal', icon: '⚽', description: 'Séance intense (sprints, changements de direction) : elle compte comme ta séance de fractionné de la semaine.' },
   referee: { label: 'Arbitrage', icon: '🏁', description: 'Match arbitré : 8 à 12 km avec accélérations, une vraie charge d\'entraînement.' },
@@ -394,6 +401,7 @@ export function generatePlan(profile, opts) {
 
   return {
     version: 1,
+    engine: ENGINE_VERSION,
     mode: fitness ? 'fitness' : 'race',
     createdAt: today,
     profile,
@@ -463,6 +471,7 @@ function generateRestartPlan(profile, opts) {
   const end = addDays(start, (nWeeks - 1) * 7 + slots.at(-1));
   return {
     version: 1,
+    engine: ENGINE_VERSION,
     mode: 'fitness',
     createdAt: today,
     profile: { ...profile, level: 'beginner', raceDate: end, raceDistance: 5000 },

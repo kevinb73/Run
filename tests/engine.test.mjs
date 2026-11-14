@@ -552,3 +552,40 @@ test('changer ses jours : passé et séances faites conservés, avenir recalcul�
   const lateStr = p2.weeks[9].sessions.find((s) => s.type === 'strength');
   assert.equal(lateStr.level, 2);
 });
+
+test('mise à niveau du moteur : ancien plan enrichi (renfo), historique et bonus conservés, une seule fois', async () => {
+  const { upgradePlan } = await import('../app/js/engine/upgrade.js');
+  const { ENGINE_VERSION } = await import('../app/js/engine/plan.js');
+  const prof = { ...fit, fitnessGoal: 'regular', durationWeeks: 12, weeklyKm: 5, longestRunKm: 3, days: [0, 2, 6], longRunDay: 6, strength: undefined };
+  // Ancien plan (v1) : sans renfo ni champ engine
+  const fresh = generatePlan(prof, { today: TODAY });
+  const old = { ...fresh, engine: undefined, weeks: fresh.weeks.map((w) => ({ ...w, sessions: w.sessions.filter((s) => s.type !== 'strength') })) };
+  const today = '2026-11-25';
+  const log = {};
+  for (const s of old.weeks.flatMap((w) => w.sessions)) if (s.date < today) log[s.id] = { done: true, feel: 'ok' };
+  const withBonus = addBonus(old, today).plan;
+  const r = upgradePlan(withBonus, log, today);
+  assert.ok(r && r.notes.length);
+  assert.equal(r.plan.engine, ENGINE_VERSION);
+  const all = r.plan.weeks.flatMap((w) => w.sessions);
+  for (const id of Object.keys(log)) assert.ok(all.some((s) => s.id === id), `historique ${id}`);
+  assert.ok(all.some((s) => s.bonus && s.date === today), 'bonus conservé');
+  assert.ok(all.some((s) => s.type === 'strength' && s.date > today), 'renfo ajouté pour la suite');
+  assert.ok(!all.some((s) => s.type === 'strength' && s.date < today), 'passé inchangé');
+  assert.equal(upgradePlan(r.plan, log, today), null, 'pas deux fois');
+  assert.equal(upgradePlan(withBonus, log, today, { paused: true }), null, 'pas pendant une pause');
+});
+
+test('plan pas encore commencé : un bonus fait avant le début reste dans l\'historique après recalcul', async () => {
+  const { upgradePlan } = await import('../app/js/engine/upgrade.js');
+  const prof = { ...fit, fitnessGoal: 'regular', durationWeeks: 12, weeklyKm: 5, longestRunKm: 3, days: [0, 2, 6], longRunDay: 6 };
+  const fresh = generatePlan(prof, { today: TODAY }); // samedi : plan démarre lundi
+  const old = { ...fresh, engine: undefined, weeks: fresh.weeks.map((w) => ({ ...w, sessions: w.sessions.filter((s) => s.type !== 'strength') })) };
+  const { plan, id } = addBonus(old, TODAY);
+  const log = { [id]: { done: true, feel: 'ok', actualKm: 2.6 } };
+  const r = upgradePlan(plan, log, TODAY);
+  const all = r.plan.weeks.flatMap((w) => w.sessions);
+  assert.ok(all.some((s) => s.id === id && s.date === TODAY), 'bonus du samedi conservé');
+  assert.equal(new Set(all.map((s) => s.id)).size, all.length);
+  assert.ok(all.some((s) => s.type === 'strength'));
+});

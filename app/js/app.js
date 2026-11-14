@@ -5,6 +5,7 @@ import { canAddBonus, addBonus, canMoveToToday, moveSession, downgradeToEasy, fi
 import { applyActivities } from './engine/garminsync.js';
 import { analyzeSession, applyVerdict, QUALITY_TYPES } from './engine/analysis.js';
 import { replanDays } from './engine/replan.js';
+import { upgradePlan } from './engine/upgrade.js';
 import { applyEasyFeedback } from './engine/easyfeedback.js';
 import { loadStatus, activityLoad, manualActivities, LOAD_LABELS } from './engine/load.js';
 import { readinessAdvice, formClass, LEVEL_FR, HRV_FR } from './engine/readiness.js';
@@ -115,10 +116,27 @@ const findSession = (id) => allSessions().find((s) => s.id === id);
 
 // ---------------- Routeur ----------------
 
+/** Nouvelle version du moteur : la suite du plan est recalculée automatiquement, l'historique reste intact. */
+function maybeUpgradePlan() {
+  const t = today();
+  const r = upgradePlan(state.plan, state.log, t, { paused: onPause(t) });
+  if (!r) return;
+  state.plan = r.plan;
+  persist();
+  if (r.notes.length) {
+    refreshPushed().then(() => pushWeek({ silent: true }));
+    setTimeout(() => showSheet(`<h2>Plan mis à jour</h2>
+      <p>Nouveauté : <strong>${esc(r.notes.join(' ; '))}</strong>.</p>
+      <p class="muted">Ton historique est intact ; seule la suite du plan a été recalculée, à partir de ton niveau actuel.</p>
+      <button class="btn primary" data-close>OK</button>`), 300);
+  }
+}
+
 function route() {
   const hash = location.hash.slice(1) || '/';
   const [, page, arg] = hash.split('/');
   if (!state.plan && page !== 'onboarding') { location.replace('#/onboarding'); return; }
+  if (state.plan) maybeUpgradePlan();
   tabbar.hidden = page === 'onboarding';
   for (const a of tabbar.querySelectorAll('a')) a.classList.toggle('active', a.dataset.page === (page || 'today'));
   window.scrollTo(0, 0);
@@ -1355,7 +1373,7 @@ function renderProfile() {
         <button class="btn" id="redo">Refaire le questionnaire</button>
       </div>
     </section>
-    <p class="muted center small">Run Coach · v0.26</p>`;
+    <p class="muted center small">Run Coach · v0.27</p>`;
 
   bindGarminProfile();
   view.querySelector('#pause-btn')?.addEventListener('click', pauseSheet);
