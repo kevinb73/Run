@@ -149,3 +149,40 @@ test('déplacer une séance à aujourd\'hui : échange, conflit, footing', async
   assert.equal(fixed.weeks.flatMap((x) => x.sessions).find((s) => s.id === conflict).type, 'easy');
   assert.equal(plan.weeks.flatMap((x) => x.sessions).find((s) => s.id === hard[1].id).date, hard[1].date, 'plan d\'origine intact');
 });
+
+test('Garmin : course du jour, faite en avance, course libre intense', async () => {
+  const { applyActivities } = await import('../app/js/engine/garminsync.js');
+  const plan = generatePlan({ ...base, days: [1, 2, 3, 5, 6], longRunDay: 6, level: 'advanced' }, { today: TODAY });
+  const sessions = plan.weeks.flatMap((w) => w.sessions);
+  const first = sessions[0];
+  const act = (id, date, km, extra = {}) => ({ id, date, start: `${date} 18:00:00`, distanceKm: km, durationSec: km * 330, paceSecPerKm: 330, ...extra });
+
+  // 1. même jour
+  let r = applyActivities(plan, {}, [act(1, first.date, first.km)], {});
+  assert.equal(r.log[first.id].source, 'garmin');
+  assert.equal(r.known[1], first.id);
+  // relancer ne retraite pas
+  const again = applyActivities(r.plan, r.log, [act(1, first.date, first.km)], r.known);
+  assert.equal(again.notices.length, 0);
+
+  // 2. en avance : course la veille d'une séance, distance proche
+  const target = sessions.find((s) => s.date > '2026-11-20' && !s.optional && s.type === 'easy');
+  const dayBefore = new Date(target.date); dayBefore.setUTCDate(dayBefore.getUTCDate() - 1);
+  const db = dayBefore.toISOString().slice(0, 10);
+  if (!sessions.some((s) => s.date === db && !s.optional)) {
+    r = applyActivities(plan, {}, [act(2, db, target.km)], {});
+    const moved = r.plan.weeks.flatMap((w) => w.sessions).find((s) => s.id === target.id);
+    assert.equal(moved.date, db);
+    assert.equal(moved.movedFrom, target.date);
+  }
+
+  // 3. course libre intense la veille d'une séance dure → footing
+  const hard = sessions.find((s) => ['threshold', 'intervals'].includes(s.type));
+  const prev = new Date(hard.date); prev.setUTCDate(prev.getUTCDate() - 1);
+  const pd = prev.toISOString().slice(0, 10);
+  const planNoPrev = structuredClone(plan);
+  for (const w of planNoPrev.weeks) w.sessions = w.sessions.filter((s) => s.date !== pd && !(s.date > pd && s.date <= hard.date && s.id !== hard.id));
+  r = applyActivities(planNoPrev, {}, [act(3, pd, 25, { trainingEffect: 4.2 })], {});
+  assert.equal(r.known[3], 'free');
+  assert.equal(r.plan.weeks.flatMap((w) => w.sessions).find((s) => s.id === hard.id).type, 'easy');
+});

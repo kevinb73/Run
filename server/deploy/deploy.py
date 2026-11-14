@@ -7,20 +7,24 @@ Le serveur s'installe tout seul (cloud-init) et sert l'API en HTTPS sur <ip>.ssl
 import json
 import os
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 
 API = "https://api.hetzner.cloud/v1"
 NAME = "runcoach"
-TYPE, LOCATION, IMAGE = "cpx11", "nbg1", "ubuntu-24.04"
+TYPE, LOCATION, IMAGE = "cpx02", "hel1", "ubuntu-24.04"
 
 
 def call(method, path, body=None):
     req = urllib.request.Request(API + path, method=method, data=json.dumps(body).encode() if body else None)
     req.add_header("Authorization", f"Bearer {os.environ.get('HETZNER_TOKEN', 'proxy-injected')}")
     req.add_header("Content-Type", "application/json")
-    with urllib.request.urlopen(req) as r:
-        return json.loads(r.read() or b"{}")
+    try:
+        with urllib.request.urlopen(req) as r:
+            return json.loads(r.read() or b"{}")
+    except urllib.error.HTTPError as e:
+        raise SystemExit(f"Hetzner {method} {path} → {e.code} : {e.read().decode()[:500]}") from None
 
 
 def firewall_id():
