@@ -148,6 +148,27 @@ export const STEPS = [
     },
   },
   {
+    when: (d) => !isRestart(d) && d.hasRecent === false,
+    title: 'Ton allure en footing',
+    render: (d) => {
+      const m = d.easyPaceSec ? Math.floor(d.easyPaceSec / 60) : '', sec = d.easyPaceSec ? d.easyPaceSec % 60 : '';
+      return `<p class="lead">À quelle allure cours-tu <strong>tranquillement</strong>, en pouvant tenir une conversation ? Pas ton allure « à fond ».</p>
+      <div class="time-input two">
+        <label><input type="number" inputmode="numeric" min="3" max="15" name="ep-m" value="${m}" placeholder="8"><span>min</span></label>
+        <label><input type="number" inputmode="numeric" min="0" max="59" name="ep-s" value="${sec}" placeholder="30"><span>s / km</span></label>
+      </div>
+      <p class="hint">Tu peux la retrouver sur ta montre Garmin (allure moyenne d'une sortie facile). En cas de doute, mets la plus lente.</p>
+      <label class="check"><input type="checkbox" name="noep" ${d.easyPaceSec === null ? 'checked' : ''}> Je ne sais pas</label>`;
+    },
+    read: (f, d) => {
+      const t = Number(f.querySelector('[name=ep-m]').value || 0) * 60 + Number(f.querySelector('[name=ep-s]').value || 0);
+      if (!t && f.querySelector('[name=noep]').checked) { d.easyPaceSec = null; return; }
+      if (!t) return 'Indique ton allure, ou coche « Je ne sais pas ».';
+      if (t < 240 || t > 900) return 'Allure entre 4\'00 et 15\'00 par km, vérifie la saisie.';
+      d.easyPaceSec = t;
+    },
+  },
+  {
     when: isRace,
     title: 'Ton objectif de temps',
     render: (d) => `<p class="lead">Optionnel. Laisse vide si l'objectif est de finir : le plan visera un chrono réaliste.</p>
@@ -217,7 +238,8 @@ export const STEPS = [
           ['Objectif', d.targetTimeSec ? duration(d.targetTimeSec) : 'Chrono réaliste calculé']];
       if (!isRestart(d)) {
         rows.push(['Niveau', LEVELS.find((l) => l.id === d.level).label]);
-        rows.push(['Référence', d.recent ? `${REF_DISTANCES.find((r) => r.m === d.recent.distanceM).label} en ${duration(d.recent.timeSec)}` : 'Aucune (niveau estimé)']);
+        rows.push(['Référence', d.recent ? `${REF_DISTANCES.find((r) => r.m === d.recent.distanceM).label} en ${duration(d.recent.timeSec)}`
+          : d.easyPaceSec ? `Footing à ${Math.floor(d.easyPaceSec / 60)}'${String(d.easyPaceSec % 60).padStart(2, '0')}/km` : 'Aucune (niveau estimé prudemment)']);
         rows.push(['Volume', `${d.weeklyKm} km/sem, sortie max ${d.longestRunKm ?? '—'} km`]);
         rows.push(['Jours', `${d.days.map((i) => DAYS_SHORT[i]).join(', ')} — longue le ${dayName(d.longRunDay)}`]);
       } else {

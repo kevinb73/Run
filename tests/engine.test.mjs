@@ -121,3 +121,12 @@ test('remise en forme : 2 jours de course possibles avec futsal', () => {
   assert.equal(sun[0].alt, 'futsal');
   assert.throws(() => generatePlan({ ...base, days: [0, 4] }, { today: TODAY }), /3 jours/);
 });
+
+test('allure de footing → allures cohérentes (8\'30/km)', async () => {
+  const { vdotFromEasyPace } = await import('../app/js/engine/vdot.js');
+  const v = vdotFromEasyPace(510);
+  const E = trainingPaces(v).E;
+  assert.ok(E[0] < 510 && 510 < E[1], 'le footing déclaré est dans la zone Endurance');
+  const plan = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, easyPaceSec: 510 }, { today: TODAY });
+  assert.ok(plan.weeks[0].paces.E[0] > 7 * 60 + 30, 'footing pas plus rapide que 7\'30');
+});

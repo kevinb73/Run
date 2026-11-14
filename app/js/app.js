@@ -92,6 +92,7 @@ function renderOnboarding() {
 /** Ne garde que les réponses pertinentes pour le mode choisi. */
 function cleanProfile(d) {
   const p = { ...d };
+  if (p.recent) delete p.easyPaceSec;
   delete p.hasRecent;
   if (p.mode === 'fitness') {
     delete p.raceDate; delete p.raceDistance; delete p.targetTimeSec;
@@ -352,7 +353,7 @@ function renderProfile() {
         <button class="btn" id="redo">Refaire le questionnaire</button>
       </div>
     </section>
-    <p class="muted center small">Run Coach · v0.4</p>`;
+    <p class="muted center small">Run Coach · v0.5</p>`;
 
   view.querySelector('#new-race').addEventListener('click', () => {
     showSheet(`<h2>Nouveau chrono</h2><form id="nr">

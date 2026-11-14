@@ -62,3 +62,15 @@ export function trainingPaces(vdot) {
 export function racePace(vdot, distanceM) {
   return predictTime(vdot, distanceM) / (distanceM / 1000);
 }
+
+/** VDOT estimé à partir de l'allure de footing (s/km) : milieu de la zone Endurance. */
+export function vdotFromEasyPace(secPerKm) {
+  let lo = 15, hi = 85;
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2;
+    const E = trainingPaces(mid).E;
+    // Plus le VDOT est haut, plus l'allure est rapide (valeur en s/km plus petite).
+    if ((E[0] + E[1]) / 2 > secPerKm) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
