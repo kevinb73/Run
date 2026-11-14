@@ -150,6 +150,8 @@ a { color: inherit; }
 .day span i { position: absolute; top: -8px; right: -6px; font-style: normal; font-size: 0.85rem; }
 .alt-note { border-color: var(--z-t); }
 .alt-btn { width: 100%; margin-top: 12px; }
+.move-today { width: 100%; margin: 4px 0 8px; }
+.sheet p { margin: 8px 0; }
 .type-sport { --tc: var(--z-t); }
 .badge.optional { background: transparent; border: 1px dashed var(--border); }
 

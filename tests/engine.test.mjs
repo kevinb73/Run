@@ -130,3 +130,22 @@ test('allure de footing → allures cohérentes (8\'30/km)', async () => {
   const plan = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, easyPaceSec: 510 }, { today: TODAY });
   assert.ok(plan.weeks[0].paces.E[0] > 7 * 60 + 30, 'footing pas plus rapide que 7\'30');
 });
+
+test('déplacer une séance à aujourd\'hui : échange, conflit, footing', async () => {
+  const { moveSession, downgradeToEasy, canMoveToToday } = await import('../app/js/engine/reschedule.js');
+  const plan = generatePlan({ ...base, days: [1, 2, 3, 5, 6], longRunDay: 6, level: 'advanced' }, { today: TODAY });
+  const w = plan.weeks.find((x) => x.phase === 'build' && !x.recovery);
+  const hard = w.sessions.filter((s) => ['threshold', 'intervals'].includes(s.type));
+  assert.ok(hard.length === 2);
+  // Avancer la 2e séance dure à la veille de... : on la place le jour précédant la 1re pour provoquer le conflit.
+  const dayBefore = new Date(hard[0].date); dayBefore.setUTCDate(dayBefore.getUTCDate() - 1);
+  const target = dayBefore.toISOString().slice(0, 10);
+  assert.ok(canMoveToToday(hard[1], {}, target) || hard[1].date > target);
+  const { plan: moved, conflict } = moveSession(plan, hard[1].id, target, {});
+  const ms = moved.weeks.flatMap((x) => x.sessions).find((s) => s.id === hard[1].id);
+  assert.equal(ms.date, target);
+  assert.equal(conflict, hard[0].id, 'conflit détecté avec la séance dure du lendemain');
+  const fixed = downgradeToEasy(moved, conflict);
+  assert.equal(fixed.weeks.flatMap((x) => x.sessions).find((s) => s.id === conflict).type, 'easy');
+  assert.equal(plan.weeks.flatMap((x) => x.sessions).find((s) => s.id === hard[1].id).date, hard[1].date, 'plan d\'origine intact');
+});

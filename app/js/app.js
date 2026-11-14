@@ -1,6 +1,7 @@
 import * as store from './store.js';
 import { generatePlan, PHASES, FITNESS_GOALS, SPORTS } from './engine/plan.js';
 import { adaptPlan, recentStats, currentWeek } from './engine/adapt.js';
+import { canMoveToToday, moveSession, downgradeToEasy } from './engine/reschedule.js';
 import { vdotFromPerformance, predictTime } from './engine/vdot.js';
 import { todayISO, daysBetween } from './engine/dates.js';
 import { visibleSteps, defaultDraft } from './onboarding.js';
@@ -179,7 +180,8 @@ function renderToday() {
     : '<section class="card"><p>Plan terminé. Bravo ! Refais le questionnaire (onglet Profil) pour un nouvel objectif.</p></section>';
   view.innerHTML = `
     <header class="hero">${hero}</header>
-    ${next ? `<h2 class="section-title">${next.date === t ? 'Aujourd\'hui' : 'Prochaine séance'}</h2>${sessionCard(next, { big: true })}` : finished}
+    ${next ? `<h2 class="section-title">${next.date === t ? 'Aujourd\'hui' : 'Prochaine séance'}</h2>${sessionCard(next, { big: true })}
+      ${canMoveToToday(next, state.log, t) ? `<button class="btn ghost move-today" data-move="${next.id}">↻ Faire cette séance aujourd'hui</button>` : ''}` : finished}
     ${missed.length ? `<section class="card warn"><p><strong>${missed.length} séance(s) passée(s) sans retour.</strong> Indique si tu les as faites : c'est ce qui permet d'adapter le plan.</p>${missed.map((s) => sessionCard(s)).join('')}</section>` : ''}
     ${weekBlock}
     ${stats.done >= 3 && p.profile.fitnessGoal !== 'restart' ? `<section class="card"><h2>Coach</h2><p class="muted">Sur 14 jours : ${Math.round((stats.completion ?? 0) * 100)} % des séances faites, ${Math.round(stats.hardShare * 100)} % ressenties dures.</p>
@@ -187,6 +189,37 @@ function renderToday() {
     ${p.warnings.map((w) => `<section class="card note"><p>${esc(w)}</p></section>`).join('')}`;
   view.querySelector('#adapt')?.addEventListener('click', () => doAdapt());
   view.querySelector('#new-cycle')?.addEventListener('click', newCycle);
+  view.querySelector('[data-move]')?.addEventListener('click', (ev) => moveToToday(ev.currentTarget.dataset.move));
+}
+
+/** Avance une séance à aujourd'hui, en vérifiant les règles de sécurité. */
+function moveToToday(id) {
+  const t = today();
+  const s = findSession(id);
+  const { plan, swappedWith, conflict, afterSport } = moveSession(state.plan, id, t, state.log);
+  state.plan = plan;
+  persist();
+  const msgs = [`<strong>${esc(s.title)}</strong> est prévue aujourd'hui. Le ${esc(dateLong(s.date))} devient un jour de repos.`];
+  if (swappedWith) msgs[0] = `<strong>${esc(s.title)}</strong> est prévue aujourd'hui, et la séance d'aujourd'hui passe au ${esc(dateLong(s.date))}.`;
+  if (afterSport) msgs.push('⚠️ Tu as fait du sport intense hier : écoute tes sensations, et n\'hésite pas à lever le pied.');
+  if (conflict) {
+    const c = findSession(conflict);
+    msgs.push(`⚠️ Demain, tu as aussi une séance dure (<strong>${esc(c.title)}</strong>). Deux séances dures d'affilée augmentent le risque de blessure.`);
+    showSheet(`<h2>Séance déplacée</h2>${msgs.map((m) => `<p>${m}</p>`).join('')}
+      <button class="btn primary" id="dg">Transformer celle de demain en footing</button>
+      <button class="btn" data-close>Garder les deux</button>`, (sheet) => {
+      sheet.querySelector('#dg').addEventListener('click', () => {
+        state.plan = downgradeToEasy(state.plan, conflict);
+        persist();
+        closeSheet();
+        toast('Séance de demain transformée en footing.');
+        route();
+      });
+    });
+  } else {
+    showSheet(`<h2>Séance déplacée</h2>${msgs.map((m) => `<p>${m}</p>`).join('')}<button class="btn primary" data-close>OK</button>`);
+  }
+  if (location.hash === `#/session/${id}`) route(); else location.hash = `#/session/${id}`;
 }
 
 function doAdapt(newRace = null) {
@@ -261,6 +294,9 @@ function renderSession(id) {
     <p>${esc(s.description)}</p>
     ${s.alt ? `<section class="card alt-note"><p><strong>${SPORTS[s.alt].icon} Jour de ${SPORTS[s.alt].label.toLowerCase()} possible.</strong> Tu fais <strong>l'un ou l'autre</strong>, pas les deux. Si tu vas au ${SPORTS[s.alt].label.toLowerCase()}, indique-le ci-dessous : la séance sera comptée comme remplacée.</p></section>` : ''}
     ${s.steps.length ? stepsHTML(s.steps) : ''}
+    ${canMoveToToday(s, state.log, t) ? `<button class="btn move-today" data-move="${s.id}">↻ Faire cette séance aujourd'hui</button>` : ''}
+    ${s.movedFrom && s.movedFrom !== s.date ? `<p class="muted small">Déplacée (prévue initialement le ${esc(dateShort(s.movedFrom))}).</p>` : ''}
+    ${s.downgraded ? '<p class="muted small">Transformée en footing pour éviter deux séances dures d\'affilée.</p>' : ''}
     ${s.optional ? '' : `<section class="card">
       <h2>Garmin</h2>
       <p class="muted">L'envoi direct vers la montre arrive à l'étape 2 (serveur de synchronisation).</p>
@@ -293,6 +329,7 @@ function renderSession(id) {
     if (s.type === 'race') askRaceResult(s);
     else { toast('Séance enregistrée 💪'); history.back(); }
   });
+  view.querySelector('[data-move]')?.addEventListener('click', () => moveToToday(id));
   view.querySelector('#replaced')?.addEventListener('click', () => {
     const feel = form.querySelector('[name=feel]:checked')?.value;
     if (!feel) { toast(`Indique ton ressenti sur le ${SPORTS[s.alt].label.toLowerCase()}.`); return; }
@@ -353,7 +390,7 @@ function renderProfile() {
         <button class="btn" id="redo">Refaire le questionnaire</button>
       </div>
     </section>
-    <p class="muted center small">Run Coach · v0.5</p>`;
+    <p class="muted center small">Run Coach · v0.6</p>`;
 
   view.querySelector('#new-race').addEventListener('click', () => {
     showSheet(`<h2>Nouveau chrono</h2><form id="nr">
