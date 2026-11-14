@@ -10,6 +10,7 @@ import { replanDays } from './replan.js';
 /** Nouveautés par version du moteur (affichées à l'utilisateur après la mise à niveau). */
 export const ENGINE_NOTES = {
   2: 'renforcement chevilles / genoux ajouté (2 × 15 min par semaine)',
+  3: 'test VMA placé un jour où tes jambes sont fraîches, avec une veille légère',
 };
 
 /** @returns null si rien à faire, sinon { plan, notes } */

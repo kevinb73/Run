@@ -445,3 +445,10 @@ svg { flex: none; }
 #df .lbl { margin: 14px 0 0; font-weight: 600; font-size: 0.85rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
 #df .days { margin: 8px 0 4px; }
 #df .btn { width: 100%; margin-top: 10px; }
+/* Mot du coach : identifiable au premier coup d'œil */
+.coach-head { display: flex; align-items: center; gap: 8px; color: var(--accent); text-transform: uppercase; letter-spacing: 0.14em; font-size: 0.75rem; font-weight: 800; margin: 0 0 8px; }
+.coach-badge { width: 22px; height: 22px; display: inline-flex; }
+.coach-badge svg { width: 100%; height: 100%; }
+.recap-conclusion .coach-lead { font-size: 1.15rem; font-weight: 700; color: var(--text, #fff); }
+.coach-quote { display: block; text-decoration: none; color: inherit; border-left: 3px solid var(--accent); padding: 8px 0 8px 12px; margin: 0 0 16px; font-size: 1rem; }
+.coach-quote .coach-head { margin-bottom: 4px; }

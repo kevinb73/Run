@@ -268,6 +268,12 @@ function strengthToday(t) {
     <span><strong>Renforcement · ~${s.min} min</strong><small class="muted">${e?.done ? 'Fait ✓' : esc(s.description.split('. ').slice(0, 1).join(''))} · chevilles, genoux, hanches</small></span></a></section>`;
 }
 
+/** Première phrase du mot du coach (récap) pour une séance faite. */
+function coachLine(s, e) {
+  if (!e?.analysis && !e?.feel) return null;
+  try { return buildRecap(s, e, { paces: weekOf(s.date)?.paces, hr: state.hr, next: null }).conclusion[0] ?? null; } catch { return null; }
+}
+
 /** Haut de l'écran quand rien n'est à faire aujourd'hui : séance faite (résumé) ou repos. */
 function todayState(t) {
   const done = allSessions().filter((x) => x.date === t && isRunType(x) && state.log[x.id]?.done && !state.log[x.id]?.replacedBy);
@@ -282,6 +288,7 @@ function todayState(t) {
       <h1 class="mega">Séance faite ✓</h1>
       <p class="today-detail">${esc(s.title)}</p>
       <div class="today-stats"><div><b>${fr(km)}</b><span>km</span></div><div><b>${Math.round(min)}</b><span>min</span></div>${e.avgHr ? `<div><b>${e.avgHr}</b><span>bpm moy.</span></div>` : ''}</div>
+      ${coachLine(s, e) ? `<a class="coach-quote" href="#/recap/${s.id}"><span class="coach-head">Le mot du coach</span>${esc(frDates(coachLine(s, e)))}</a>` : ''}
       <a class="btn primary" href="#/recap/${s.id}">Voir le récap</a>
     </section>`;
   }
@@ -664,7 +671,10 @@ async function pushWeek({ silent = false } = {}) {
   let ok = 0;
   try {
     for (const s of soon) {
-      try { await pushSession(s); ok++; } catch (ex) { if (!silent) toast(ex.message); break; }
+      try { await pushSession(s); ok++; } catch (ex) {
+        if (s.type === 'strength') continue; // serveur pas encore à jour pour le renfo : on n'empêche pas l'envoi des courses
+        if (!silent) toast(ex.message); break;
+      }
     }
   } finally {
     pushing = false;
@@ -722,9 +732,24 @@ function daysSheet() {
 }
 
 /** Après un recalcul du plan : met à jour (ou retire) sur la montre les séances déjà envoyées. */
+/** Séance faite en avance (ou remplacée) : on la retire du calendrier de la montre à sa date d'origine. */
+async function removeDoneAhead() {
+  if (!garminOn()) return;
+  const t = today();
+  for (const [id, info] of Object.entries(state.pushed)) {
+    const e = state.log[id];
+    if (!e?.done || info.date < t) continue;
+    const doneOn = e.at ?? t;
+    if (doneOn >= info.date) continue; // faite le jour prévu : rien à retirer
+    try { await api(state.garmin, 'DELETE', `/workouts/${encodeURIComponent(id)}`); delete state.pushed[id]; persist(); }
+    catch { break; } // hors ligne : on réessaiera à la prochaine synchro
+  }
+}
+
 async function refreshPushed() {
   if (!garminOn()) return;
   const t = today();
+  await removeDoneAhead();
   for (const [id, info] of Object.entries(state.pushed)) {
     if (info.date < t || state.log[id]?.done) continue; // séance déjà faite : on n'y touche plus
     const s = findSession(id);
@@ -787,6 +812,7 @@ async function syncActivities(force) {
     state.freeRuns = [...state.freeRuns, ...r.freeRuns];
     if (r.notices.length) state.syncNotices = r.notices.slice(-5);
     persist();
+    removeDoneAhead();
     if (force) toast(r.notices.length ? `${r.notices.length} course(s) importée(s).` : 'Aucune nouvelle course.');
     if (r.notices.length || force) route();
   } catch (ex) {
@@ -1146,7 +1172,7 @@ function renderRecap(id) {
     <a href="#/" class="back">‹ Aujourd'hui</a>
     <p class="muted">${esc(dateLong(s.date))}${e.source === 'garmin' ? ' · données Garmin' : ''}</p>
     <div class="row between"><h1>${esc(s.title)}</h1>${v ? `<span class="verdict ${v.cls}">${v.icon} ${v.label}</span>` : ''}</div>
-    <section class="card recap-conclusion"><h2>Le mot du coach</h2>${r.conclusion.map((c) => `<p>${esc(frDates(c))}</p>`).join('')}</section>
+    <section class="card recap-conclusion"><p class="coach-head"><span class="coach-badge">${ICONS.progress}</span>Le mot du coach</p>${r.conclusion.map((c, k) => `<p class="${k === 0 ? 'coach-lead' : ''}">${esc(frDates(c))}</p>`).join('')}</section>
     ${r.stats.length ? `<div class="stat-grid">${r.stats.map((x) => `<div class="stat"><span class="stat-value">${esc(x.value)}</span><span class="stat-label">${esc(x.label)}</span></div>`).join('')}</div>`
       : '<section class="card note"><p>Séance saisie à la main : connecte ta montre pour avoir les chiffres détaillés.</p></section>'}
     ${r.compare.length ? `<section class="card"><h2>Prévu / réalisé</h2><table class="compare">
@@ -1373,7 +1399,7 @@ function renderProfile() {
         <button class="btn" id="redo">Refaire le questionnaire</button>
       </div>
     </section>
-    <p class="muted center small">Run Coach · v0.27</p>`;
+    <p class="muted center small">Run Coach · v0.28</p>`;
 
   bindGarminProfile();
   view.querySelector('#pause-btn')?.addEventListener('click', pauseSheet);

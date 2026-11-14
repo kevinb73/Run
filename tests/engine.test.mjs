@@ -515,7 +515,7 @@ test('renforcement : 2 séances/sem., après le 1er footing + un soir libre, jam
   const otherSports = [{ day: 2, kind: 'futsal' }, { day: 6, kind: 'futsal' }, { day: 5, kind: 'referee' }];
   const plan = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, weeklyKm: 5, longestRunKm: 3, days: [0, 2, 6], longRunDay: 6, otherSports }, { today: TODAY });
   const wd = (d) => (new Date(d).getUTCDay() + 6) % 7;
-  for (const w of plan.weeks.slice(0, -1)) {
+  for (const w of plan.weeks.slice(0, -1).filter((x) => !x.sessions.some((s) => s.type === 'test'))) {
     const st = w.sessions.filter((s) => s.type === 'strength');
     assert.equal(st.length, 2, `semaine ${w.index}`);
     assert.deepEqual(st.map((s) => wd(s.date)), [0, 3], 'lundi après le footing + jeudi');
@@ -589,3 +589,23 @@ test('plan pas encore commencé : un bonus fait avant le début reste dans l\'hi
   assert.equal(new Set(all.map((s) => s.id)).size, all.length);
   assert.ok(all.some((s) => s.type === 'strength'));
 });
+
+test('test VMA : jamais le lendemain du futsal / de la sortie longue ; veille allégée, sans renfo', () => {
+  const otherSports = [{ day: 2, kind: 'futsal' }, { day: 6, kind: 'futsal' }, { day: 5, kind: 'referee' }];
+  const plan = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, weeklyKm: 5, longestRunKm: 3, days: [0, 2, 6], longRunDay: 6, otherSports }, { today: TODAY });
+  const wd = (d) => (new Date(d).getUTCDay() + 6) % 7;
+  const all = plan.weeks.flatMap((w) => w.sessions);
+  const test = all.find((s) => s.type === 'test' && s.title.includes('6 min'));
+  assert.ok(test, 'un test VMA dans le plan');
+  const d = wd(test.date);
+  assert.ok(![2, 6, 5].includes(d), `pas un jour de sport (${d})`);
+  assert.ok(![3, 0, 6].includes(d), `pas le lendemain d'un sport ni de la sortie longue (${d})`);
+  const veille = addDaysT(test.date, -1), lendemain = test.date;
+  for (const s of all.filter((x) => x.date === veille || x.date === lendemain)) {
+    assert.notEqual(s.type, 'strength', `pas de renfo ${s.date}`);
+    assert.ok(!s.steps?.some((st) => st.kind === 'repeat') || s.type === 'test', `pas d'accélérations la veille ${s.title}`);
+  }
+  const w = plan.weeks.find((x) => x.sessions.includes(test));
+  assert.equal(w.sessions.filter((s) => !s.optional).length, 3, 'toujours 3 séances cette semaine');
+});
+function addDaysT(iso, n) { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }

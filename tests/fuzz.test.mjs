@@ -88,3 +88,53 @@ test('600 profils aléatoires : génération, réajustement, pause, déplacement
   }
   assert.ok(n > 400, `assez de plans générés (${n})`);
 });
+
+test('600 profils aléatoires : changement de jours, mise à niveau, bonus, allègement', async () => {
+  const { replanDays } = await import('../app/js/engine/replan.js');
+  const { upgradePlan } = await import('../app/js/engine/upgrade.js');
+  const { addBonus, canAddBonus } = await import('../app/js/engine/reschedule.js');
+  const { applyEasyFeedback } = await import('../app/js/engine/easyfeedback.js');
+  const today = '2026-11-14';
+  seed = 7;
+  let n = 0;
+  for (let i = 0; i < 600; i++) {
+    const mode = pick(['race', 'fitness', 'fitness']);
+    const days = subset(6, mode === 'fitness' ? 2 : 3);
+    const sportsDays = subset(2, 0).slice(0, Math.floor(rnd() * 3));
+    const profile = {
+      mode, level: pick(['beginner', 'intermediate', 'advanced']), weeklyKm: Math.round(rnd() * 40), longestRunKm: Math.round(rnd() * 15) || null,
+      days, longRunDay: pick(days), recent: null, easyPaceSec: pick([null, 400, 480, 570, 620]),
+      otherSports: sportsDays.map((d) => ({ day: d, kind: pick(['futsal', 'referee']) })),
+      ...(mode === 'race' ? { raceDistance: pick([5000, 10000, 21097]), raceDate: addDays(today, 70 + Math.floor(rnd() * 150)) }
+        : { fitnessGoal: pick(['restart', 'regular', 'progress']), durationWeeks: pick([12, 16]) }),
+    };
+    if (mode === 'fitness' && profile.fitnessGoal === 'restart' && days.length < 3) continue;
+    let plan;
+    try { plan = generatePlan(profile, { today }); } catch { continue; }
+    check(plan, `gen ${i}`);
+    const mid = addDays(plan.weeks[0].start, 7 * Math.floor(rnd() * Math.max(1, plan.weeks.length - 2)) + Math.floor(rnd() * 7));
+    const log = {};
+    for (const s of plan.weeks.flatMap((w) => w.sessions)) if (s.date < mid && rnd() < 0.8) log[s.id] = { done: true, feel: pick(['easy', 'ok', 'hard']), avgHr: 140 + Math.floor(rnd() * 40), at: s.date };
+    // bonus + allègement
+    let p = plan;
+    if (canAddBonus(p, log, mid)) {
+      const b = addBonus(p, mid); p = b.plan; log[b.id] = { done: true, feel: pick(['ok', 'hard']), avgHr: 165, at: mid };
+      const r = applyEasyFeedback(p, log, b.id, { maxHr: 190, restHr: 60 }); p = r.plan; check(p, `feedback ${i}`);
+    }
+    // changement de jours
+    const nd = subset(6, mode === 'fitness' ? (profile.fitnessGoal === 'restart' ? 3 : 2) : 3);
+    try {
+      const r = replanDays(p, log, mid, { days: nd, longRunDay: pick(nd), otherSports: [] });
+      check(r.plan, `replan ${i}`);
+      for (const id of Object.keys(log)) {
+        const old = p.weeks.flatMap((w) => w.sessions).find((s) => s.id === id);
+        if (old && (old.date < mid || log[id].done)) assert.ok(r.plan.weeks.flatMap((w) => w.sessions).some((s) => s.id === id), `replan ${i} : historique ${id}`);
+      }
+      n++;
+    } catch (e) { if (!/terminé|au moins|sortie longue|trop proche|Distance/.test(e.message)) throw e; }
+    // mise à niveau d'un « vieux » plan
+    const u = upgradePlan({ ...p, engine: 1 }, log, mid);
+    if (u) check(u.plan, `upgrade ${i}`);
+  }
+  assert.ok(n > 300, `assez de cas testés (${n})`);
+});

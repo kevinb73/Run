@@ -1,6 +1,6 @@
 # Feuille de route — Run Coach
 
-_Dernière mise à jour : 14 novembre 2026 · app : **v0.16** (en attente de validation, PR #16) · serveur : **64abd20**_
+_Dernière mise à jour : 14 novembre 2026 · app : **v0.28** · serveur : **64abd20**_
 
 Principe : **on n'ajoute une fonction que si elle sert la régularité, la progression ou la prévention des blessures.**
 Les priorités sont revues après chaque bloc de 2–3 semaines de course réelle.
@@ -41,7 +41,7 @@ Livrable : liste des corrections et des seuils à ajuster.
 |---|---|---|---|
 | 1.1 | ~~Atelier esthétique~~ → **fait en v0.16** (style Nike Run Club). Reste : ajustements après prise en main | L'app doit donner envie de l'ouvrir | Petit |
 | 1.2 | Icône d'app et écran de démarrage soignés | Première impression sur l'iPhone | Petit |
-| 1.3 | Retirer de la montre une séance faite en avance | Aujourd'hui elle reste affichée à sa date d'origine | Petit |
+| 1.3 | ~~Retirer de la montre une séance faite en avance~~ → **fait en v0.28** | — | — |
 
 Entrée attendue : tes captures annotées de ce qui te gêne visuellement.
 
@@ -65,7 +65,7 @@ Coût : 0 € (abonnement ChatGPT existant). Points d'attention : confidentialit
 
 | # | Fonction | Pourquoi | Effort |
 |---|---|---|---|
-| 3.1 | **Veille du test VMA allégée automatiquement** | Test du 28 décembre fiable (pas de futsal / sortie longue la veille) | Petit — **avant le 20 déc.** |
+| 3.1 | ~~Veille du test VMA allégée~~ → **fait en v0.28** (test un jour « frais », veille sans accélérations ni renfo) | Test fiable | — |
 | 3.2 | ~~Modifier ses jours sans refaire le plan~~ → **fait en v0.26** (Profil → Mes jours) | Planning futsal / arbitrage variable ; garder l'historique | — |
 | 3.3 | ~~Renforcement~~ → **fait en v0.26** (2 × 15 min / sem., 3 niveaux, envoyé sur la montre) | Chevilles, genoux, tendons : le risque n° 1 avec le futsal | — |
 | 3.4 | Indisponibilités ponctuelles (« pas dispo jeudi ») | Redistribuer la semaine | Petit |
@@ -139,6 +139,7 @@ Niche la plus prometteuse : **préparation physique des arbitres** (tests obliga
 | v0.25 | Écran Aujourd'hui centré sur le jour : « Séance faite ✓ » (résumé + récap) ou « Repos », prochaine séance en carte compacte |
 | v0.26 | Renforcement chevilles / genoux / hanches (2 × 15 min, 3 niveaux, sur la montre) ; « Mes jours » : changer jours de course / sports sans refaire le plan |
 | v0.27 | Plans « à l'épreuve des mises à jour » : version du moteur, recalcul automatique de la suite à chaque nouveauté, historique et bonus conservés |
+| v0.28 | Test VMA placé un jour où les jambes sont fraîches (veille légère) ; séance faite en avance retirée de la montre ; mot du coach mis en avant ; passe anti-bug (semaine allégée lors d'un recalcul, envoi renfo non bloquant, test de robustesse étendu) |
 
 ## Coûts récurrents
 

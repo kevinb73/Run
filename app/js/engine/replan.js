@@ -27,7 +27,9 @@ export function replanDays(plan, log, today, patch, opts = {}) {
     fresh = generatePlan(profile, { today, startDate: plan.weeks[0].start });
   } else {
     const longNow = cur.sessions.filter((s) => s.type === 'long').map((s) => s.km)[0];
-    fresh = generatePlan({ ...profile, weeklyKm: Math.round(cur.volumeKm), longestRunKm: longNow ?? profile.longestRunKm }, {
+    // Semaine allégée en cours : on repart du volume « normal » (sinon la suite démarrerait 25 % trop bas).
+    const baseKm = cur.recovery ? cur.volumeKm / 0.75 : cur.volumeKm;
+    fresh = generatePlan({ ...profile, weeklyKm: Math.round(baseKm), longestRunKm: longNow ?? profile.longestRunKm }, {
       today, startDate: cur.start, vdotStart: cur.vdot, weekOffset: cur.index,
     });
   }
