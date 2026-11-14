@@ -442,3 +442,6 @@ svg { flex: none; }
 .next-link strong { display: block; font-size: 1.05rem; }
 .next-link small { display: block; margin-top: 2px; }
 .next-card .move-today { width: 100%; margin-top: 8px; }
+#df .lbl { margin: 14px 0 0; font-weight: 600; font-size: 0.85rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+#df .days { margin: 8px 0 4px; }
+#df .btn { width: 100%; margin-top: 10px; }

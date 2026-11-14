@@ -87,6 +87,32 @@ class ConversionTest(unittest.TestCase):
             self.assertEqual(orders, list(range(1, len(orders) + 1)), f"ordre des étapes {s['title']}")
 
 
+class StrengthTest(unittest.TestCase):
+    def test_strength_sessions_convert(self):
+        js = """
+        import { generatePlan } from './app/js/engine/plan.js';
+        const p = generatePlan({ mode: 'fitness', fitnessGoal: 'regular', durationWeeks: 12, level: 'intermediate', weeklyKm: 5, longestRunKm: 3,
+          days: [0, 2, 6], longRunDay: 6, otherSports: [{ day: 2, kind: 'futsal' }, { day: 5, kind: 'referee' }] }, { today: '2026-11-14' });
+        console.log(JSON.stringify(p.weeks.flatMap((w) => w.sessions).filter((s) => s.type === 'strength')));
+        """
+        out = subprocess.run(["node", "--input-type=module", "-e", js], cwd=ROOT, capture_output=True, text=True, check=True)
+        sessions = json.loads(out.stdout)
+        self.assertGreaterEqual(len(sessions), 20)
+        for s in sessions:
+            w = session_to_workout(s)
+            self.assertEqual(w["sportType"]["sportTypeKey"], "strength_training")
+            groups = w["workoutSegments"][0]["workoutSteps"]
+            self.assertEqual(len(groups), 5)
+            orders = []
+            for g in groups:
+                orders.append(g["stepOrder"])
+                ex, rest = g["workoutSteps"]
+                orders += [ex["stepOrder"], rest["stepOrder"]]
+                self.assertTrue(ex["category"] and ex["exerciseName"])
+            self.assertEqual(orders, list(range(1, len(orders) + 1)))
+            self.assertLess(w["estimatedDurationInSecs"], 20 * 60)
+
+
 class TargetTest(unittest.TestCase):
     def test_easy_run_never_pushes_to_speed_up(self):
         s = {"id": "x", "date": "2026-11-16", "title": "Footing", "min": 40, "steps": [

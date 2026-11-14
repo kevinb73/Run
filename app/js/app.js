@@ -4,6 +4,7 @@ import { adaptPlan, recentStats, currentWeek } from './engine/adapt.js';
 import { canAddBonus, addBonus, canMoveToToday, moveSession, downgradeToEasy, findSafeDay, missedKeySession, makeUp, shortenEasy, HARD_TYPES } from './engine/reschedule.js';
 import { applyActivities } from './engine/garminsync.js';
 import { analyzeSession, applyVerdict, QUALITY_TYPES } from './engine/analysis.js';
+import { replanDays } from './engine/replan.js';
 import { applyEasyFeedback } from './engine/easyfeedback.js';
 import { loadStatus, activityLoad, manualActivities, LOAD_LABELS } from './engine/load.js';
 import { readinessAdvice, formClass, LEVEL_FR, HRV_FR } from './engine/readiness.js';
@@ -216,6 +217,7 @@ function newCycle() {
 const frDates = (txt) => String(txt).replace(/\d{4}-\d{2}-\d{2}/g, (d) => dateShort(d));
 
 const sportIcon = (k) => ICONS[k === 'referee' ? 'referee' : 'futsal'];
+const isRunType = (s) => s.type !== 'sport' && s.type !== 'strength';
 const iconOf = (s) => (s.type === 'sport' ? sportIcon(s.sport) : ICONS[s.type]) ?? '•';
 
 // ---------------- Aujourd'hui ----------------
@@ -228,20 +230,29 @@ function sessionCard(s, { big = false } = {}) {
     <span class="body">
       <span class="date">${esc(big ? dateLong(s.date) : dateShort(s.date))}</span>
       <span class="title">${esc(s.title)}</span>
-      <span class="meta">${s.optional ? 'Facultatif' : `${s.km} km · ~${hm(s.min)}`}${s.alt ? ` · ou ${sportIcon(s.alt)} ${SPORTS[s.alt].label.toLowerCase()}` : ''}</span>
+      <span class="meta">${s.type === 'strength' ? `~${s.min} min · sans matériel` : s.optional ? 'Facultatif' : `${s.km} km · ~${hm(s.min)}`}${s.alt ? ` · ou ${sportIcon(s.alt)} ${SPORTS[s.alt].label.toLowerCase()}` : ''}</span>
     </span>${status}</a>`;
 }
 
 /** Grand bloc « séance du jour » : ce qu'on doit voir en premier en ouvrant l'app. */
 /** Déjà couru aujourd'hui (séance du plan, bonus ou course libre) : on ne propose pas une 2e course. */
 function alreadyRan(t) {
-  return allSessions().some((x) => x.date === t && x.type !== 'sport' && state.log[x.id]?.done && !state.log[x.id]?.replacedBy)
+  return allSessions().some((x) => x.date === t && isRunType(x) && state.log[x.id]?.done && !state.log[x.id]?.replacedBy)
     || state.freeRuns.some((r) => r.date === t);
+}
+
+/** Renforcement du jour (facultatif) : petite carte sous la séance. */
+function strengthToday(t) {
+  const s = allSessions().find((x) => x.date === t && x.type === 'strength');
+  if (!s) return '';
+  const e = state.log[s.id];
+  return `<section class="card strength-card"><a class="next-link" href="#/session/${s.id}"><span class="icon">${iconOf(s)}</span>
+    <span><strong>Renforcement · ~${s.min} min</strong><small class="muted">${e?.done ? 'Fait ✓' : esc(s.description.split('. ').slice(0, 1).join(''))} · chevilles, genoux, hanches</small></span></a></section>`;
 }
 
 /** Haut de l'écran quand rien n'est à faire aujourd'hui : séance faite (résumé) ou repos. */
 function todayState(t) {
-  const done = allSessions().filter((x) => x.date === t && x.type !== 'sport' && state.log[x.id]?.done && !state.log[x.id]?.replacedBy);
+  const done = allSessions().filter((x) => x.date === t && isRunType(x) && state.log[x.id]?.done && !state.log[x.id]?.replacedBy);
   const sport = allSessions().find((x) => x.date === t && x.type === 'sport');
   const free = state.freeRuns.filter((r) => r.date === t);
   if (done.length) {
@@ -347,6 +358,7 @@ function renderToday() {
     ${pauseBlock(t)}
     ${painBlock(t)}
     ${next ? (next.date === t ? todayHero(next, t, canMove, bonusOk) : todayState(t) + nextCard(next, t, canMove, bonusOk)) : finished}
+    ${strengthToday(t)}
     <header class="cycle-strip">${hero}</header>
     ${missed.length ? `<section class="card warn"><p><strong>${missed.length} séance(s) passée(s) sans retour.</strong> Indique si tu les as faites : c'est ce qui permet d'adapter le plan.</p>${missed.map((s) => sessionCard(s)).join('')}</section>` : ''}
     ${readinessBlock(t, next)}
@@ -415,7 +427,7 @@ async function analyzePending() {
   try {
     const todo = allSessions().filter((s) => {
       const e = state.log[s.id];
-      return e?.done && !e.replacedBy && !e.analysis && e.feel && s.date >= addDays(t, -10) && s.type !== 'sport' && s.type !== 'race';
+      return e?.done && !e.replacedBy && !e.analysis && e.feel && s.date >= addDays(t, -10) && isRunType(s) && s.type !== 'race';
     });
     for (const s of todo) {
       const e = state.log[s.id];
@@ -590,7 +602,7 @@ function feelPrompt(t) {
 
 // Fenêtre d'envoi automatique : aujourd'hui + 8 jours, pour qu'un samedi la sortie longue du dimanche suivant soit couverte.
 const PUSH_DAYS = 8;
-const toPush = (t) => allSessions().filter((s) => !s.optional && s.date >= t && s.date <= addDays(t, PUSH_DAYS) && !state.log[s.id]?.done);
+const toPush = (t) => allSessions().filter((s) => (!s.optional || s.type === 'strength') && s.date >= t && s.date <= addDays(t, PUSH_DAYS) && !state.log[s.id]?.done);
 
 function garminTodayBlock(t) {
   if (!garminOn()) return '';
@@ -643,6 +655,54 @@ async function pushWeek({ silent = false } = {}) {
   if (location.hash === '' || location.hash === '#/') route();
 }
 
+const DAY_LONG = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
+const DAY_SHORT = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+const fmtDays = (ds) => [...ds].sort((a, b) => a - b).map((d) => DAY_SHORT[d].toLowerCase()).join(', ');
+function sportsSummary(sports) {
+  return Object.keys(SPORTS).map((k) => [k, sports.filter((x) => x.kind === k).map((x) => x.day)])
+    .filter(([, ds]) => ds.length).map(([k, ds]) => `${SPORTS[k].label.toLowerCase()} ${fmtDays(ds)}`).join(' · ');
+}
+
+/** Modifier ses jours (course, sortie longue, sports, renforcement) sans refaire le plan. */
+function daysSheet() {
+  const pr = state.plan.profile;
+  const sports = pr.otherSports ?? [];
+  const row = (name, checked) => `<div class="days">${DAY_SHORT.map((l, d) => `<label class="day"><input type="checkbox" name="${name}" value="${d}" ${checked(d) ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div>`;
+  const min = state.plan.mode === 'fitness' ? 2 : 3;
+  showSheet(`<h2>Mes jours</h2>
+    <p class="muted">L'historique est conservé ; seules les séances à venir sont recalculées, à partir de ton niveau actuel.</p>
+    <form id="df">
+      <p class="lbl">Jours de course (${min} minimum)</p>${row('run', (d) => pr.days.includes(d))}
+      <label class="field">Sortie longue<select name="long">${DAY_LONG.map((l, d) => `<option value="${d}" ${d === pr.longRunDay ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      ${Object.keys(SPORTS).map((k) => `<p class="lbl">${esc(SPORTS[k].label)} (si tu y vas)</p>${row(`sp-${k}`, (d) => sports.some((x) => x.kind === k && x.day === d))}`).join('')}
+      <label class="check"><input type="checkbox" name="strength" ${pr.strength === false ? '' : 'checked'}> Renforcement chevilles / genoux (2 × 15 min / sem.)</label>
+      <p class="error"></p>
+      <button class="btn primary" type="submit">Recalculer la suite du plan</button>
+      <button class="btn" type="button" data-close>Annuler</button>
+    </form>`, (sheet) => {
+    sheet.querySelector('#df').addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      const f = ev.currentTarget;
+      const vals = (n) => [...f.querySelectorAll(`[name="${n}"]:checked`)].map((i) => Number(i.value));
+      const days = vals('run');
+      const longRunDay = Number(f.long.value);
+      const err = f.querySelector('.error');
+      if (days.length < min) { err.textContent = `Choisis au moins ${min} jours de course.`; return; }
+      if (!days.includes(longRunDay)) { err.textContent = 'Le jour de sortie longue doit être un jour de course.'; return; }
+      const otherSports = Object.keys(SPORTS).flatMap((k) => vals(`sp-${k}`).map((day) => ({ day, kind: k })));
+      try {
+        const { plan, adjustment } = replanDays(state.plan, state.log, today(), { days, longRunDay, otherSports, strength: f.strength.checked });
+        state.plan = plan;
+        persist();
+        closeSheet();
+        refreshPushed().then(() => pushWeek({ silent: true }));
+        toast(adjustment.reasons[0].split(' Historique')[0]);
+        route();
+      } catch (ex) { err.textContent = ex.message; }
+    });
+  });
+}
+
 /** Après un recalcul du plan : met à jour (ou retire) sur la montre les séances déjà envoyées. */
 async function refreshPushed() {
   if (!garminOn()) return;
@@ -651,7 +711,7 @@ async function refreshPushed() {
     if (info.date < t || state.log[id]?.done) continue; // séance déjà faite : on n'y touche plus
     const s = findSession(id);
     try {
-      if (s && !s.optional) await pushSession(s);
+      if (s && (!s.optional || s.type === 'strength')) await pushSession(s);
       else { await api(state.garmin, 'DELETE', `/workouts/${encodeURIComponent(id)}`); delete state.pushed[id]; persist(); }
     } catch (ex) { toast(`Montre non mise à jour : ${ex.message}`); break; }
   }
@@ -912,6 +972,10 @@ function volumeChart() {
 function stepsHTML(steps) {
   return `<ol class="steps">${steps.map((st) => {
     if (st.kind === 'repeat') return `<li class="repeat"><span class="times">${st.times} ×</span>${stepsHTML(st.steps)}</li>`;
+    if (st.kind === 'strength') return `<li class="step kind-strength" style="--zc:var(--accent)">
+      <span class="dur">${st.sets} × ${st.work} s</span>
+      <span class="what"><span><strong>${esc(st.name)}</strong> <span class="pace">récup ${st.rest} s</span></span><small>${esc(st.note ?? '')}</small></span>
+    </li>`;
     const z = st.zone ? ZONES[st.zone] : null;
     return `<li class="step kind-${st.kind}" style="--zc:${z?.color ?? 'var(--muted)'}">
       <span class="dur">${stepDuration(st.dur)}</span>
@@ -957,7 +1021,7 @@ function renderSession(id) {
         <label class="field">Note (optionnel)<input type="text" name="note" value="${esc(e.note ?? '')}" maxlength="200"></label>
         <div class="actions">
           <button type="button" class="btn ghost" id="skip">${e.skipped ? 'Annuler' : s.optional ? 'Pas cette fois' : 'Pas faite'}</button>
-          <button type="submit" class="btn primary">${e.done && !e.replacedBy ? 'Mettre à jour' : s.optional ? 'J\'y suis allé' : 'Séance faite'}</button>
+          <button type="submit" class="btn primary">${e.done && !e.replacedBy ? 'Mettre à jour' : s.type === 'strength' ? 'C\'est fait' : s.optional ? 'J\'y suis allé' : 'Séance faite'}</button>
         </div>
         ${s.alt ? `<button type="button" class="btn alt-btn" id="replaced">${sportIcon(s.alt)} ${e.replacedBy ? `${SPORTS[s.alt].label} enregistré` : `J'ai fait du ${SPORTS[s.alt].label.toLowerCase()} à la place`}</button>` : ''}
       </form>
@@ -1273,6 +1337,10 @@ function renderProfile() {
       <button class="btn" id="new-race">Ajouter un chrono</button>
     </section>
     ${p.adjustments.length ? `<section class="card"><h2>Historique des ajustements</h2><ul class="adj">${p.adjustments.slice().reverse().map((a) => `<li><strong>${esc(dateShort(a.date))}</strong> — ${a.reasons.map(esc).join(' ')}</li>`).join('')}</ul></section>` : ''}
+    <section class="card"><h2>Mes jours</h2>
+      <p class="muted">Course ${esc(fmtDays(p.profile.days))} · sortie longue le ${DAY_LONG[p.profile.longRunDay]}${(p.profile.otherSports ?? []).length ? ` · ${esc(sportsSummary(p.profile.otherSports))}` : ''} · renforcement ${p.profile.strength === false ? 'désactivé' : '2×/sem.'}</p>
+      <button class="btn" id="days-btn">Modifier mes jours</button>
+    </section>
     <section class="card"><h2>⏸ Pause</h2>
       <p class="muted">Maladie, blessure, vacances : le plan se suspend puis reprend en douceur au lieu de repartir comme si de rien n'était.</p>
       ${onPause(today()) ? `<p>En pause jusqu'au <strong>${esc(dateLong(state.pause.until))}</strong>.</p>` : '<button class="btn" id="pause-btn">Faire une pause</button>'}
@@ -1287,10 +1355,11 @@ function renderProfile() {
         <button class="btn" id="redo">Refaire le questionnaire</button>
       </div>
     </section>
-    <p class="muted center small">Run Coach · v0.25</p>`;
+    <p class="muted center small">Run Coach · v0.26</p>`;
 
   bindGarminProfile();
   view.querySelector('#pause-btn')?.addEventListener('click', pauseSheet);
+  view.querySelector('#days-btn')?.addEventListener('click', daysSheet);
   view.querySelector('#g-restore')?.addEventListener('click', () => {
     if (confirm('Remplacer le plan de ce téléphone par la dernière sauvegarde du serveur ?')) restoreSheet();
   });

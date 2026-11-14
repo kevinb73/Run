@@ -7,6 +7,7 @@
 //  - Allures calculées par le modèle VDOT à partir d'une performance récente.
 
 import { vdotFromPerformance, vdotFromEasyPace, predictTime, racePace, trainingPaces } from './vdot.js';
+import { strengthSession, strengthDays, strengthLevel } from './strength.js';
 import { addDays, mondayOf, weekday, daysBetween } from './dates.js';
 import * as W from './workouts.js';
 
@@ -264,7 +265,7 @@ export function generatePlan(profile, opts) {
     const phaseLen = phases.filter((p) => p === phase).length;
     const p = phaseLen > 1 ? idxInPhase / (phaseLen - 1) : 1;
     const isRaceWeek = i === nWeeks - 1;
-    const recovery = phase !== 'taper' && i % 4 === 3;
+    const recovery = phase !== 'taper' && (weekOffset + i) % 4 === 3; // cycle 3:1 sur tout le plan (même après recalcul)
     const weekStart = addDays(start, i * 7);
 
     // Volume de la semaine
@@ -361,6 +362,17 @@ export function generatePlan(profile, opts) {
       slots.easy.forEach((d) => push(d, d === testOnEasy ? W.vmaTest(c)
         : d === stridesOn ? W.easyRun(c, Math.max(minEasy - 1, easyKm - 1), { strides: true })
           : W.easyRun(c, easyKm)));
+
+      // Renforcement (2 × 15 min) : après le 1er footing + un soir libre, jamais la veille d'un sport ou d'une séance dure.
+      if (profile.strength !== false) {
+        const hardDays = [...slots.quality, slots.long].filter((d) => d != null);
+        const level = Math.max(0, strengthLevel(weekOffset + i) - (recovery ? 1 : 0));
+        for (const d of strengthDays({ runDays: days, easyDays: slots.easy, hardDays, sportDays })) {
+          const date = addDays(weekStart, d);
+          if (daysBetween(today, date) < 0) continue;
+          sessions.push({ id: `${weekOffset + i}-${d}-renfo`, date, ...strengthSession(level, { afterRun: days.includes(d) }) });
+        }
+      }
     }
 
     sessions.sort((a, b) => a.date.localeCompare(b.date));

@@ -12,6 +12,7 @@ export const ICONS = {
   'race-pace': svg('<circle cx="12" cy="13" r="8"/><path d="M12 13l3-3M10 2h4"/>'),
   race: svg('<path d="M5 21V4h10l-1 4h5l-2 6H6"/>'),
   test: svg('<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M9 2h6"/>'),
+  strength: svg('<path d="M6 7v10M18 7v10M3 10v4M21 10v4M6 12h12"/>'),
   futsal: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7l4 3-1.5 5h-5L8 10z"/>'),
   referee: svg('<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>'),
   today: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),

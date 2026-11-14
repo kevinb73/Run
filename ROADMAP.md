@@ -65,8 +65,8 @@ Coût : 0 € (abonnement ChatGPT existant). Points d'attention : confidentialit
 | # | Fonction | Pourquoi | Effort |
 |---|---|---|---|
 | 3.1 | **Veille du test VMA allégée automatiquement** | Test du 28 décembre fiable (pas de futsal / sortie longue la veille) | Petit — **avant le 20 déc.** |
-| 3.2 | **Modifier ses jours sans refaire le plan** | Planning futsal / arbitrage variable ; garder l'historique | Moyen |
-| 3.3 | **Renforcement & mobilité** (2 × 15 min / sem.) envoyés sur la montre | Chevilles, genoux, tendons : le risque n° 1 avec le futsal | Moyen |
+| 3.2 | ~~Modifier ses jours sans refaire le plan~~ → **fait en v0.26** (Profil → Mes jours) | Planning futsal / arbitrage variable ; garder l'historique | — |
+| 3.3 | ~~Renforcement~~ → **fait en v0.26** (2 × 15 min / sem., 3 niveaux, envoyé sur la montre) | Chevilles, genoux, tendons : le risque n° 1 avec le futsal | — |
 | 3.4 | Indisponibilités ponctuelles (« pas dispo jeudi ») | Redistribuer la semaine | Petit |
 
 ### 3.5 — Préparation au Yo-Yo test d'arbitre (priorité de la phase 3)
@@ -136,6 +136,7 @@ Niche la plus prometteuse : **préparation physique des arbitres** (tests obliga
 | v0.22 | Footing dur ou cœur trop haut → footing suivant (≤ 3 j) allégé de 20 %, sans accélérations |
 | v0.23–v0.24 | Plus de 2e course proposée le même jour ; futsal / arbitrage notés sans montre : durée + ressenti comptés dans la charge (méthode RPE) |
 | v0.25 | Écran Aujourd'hui centré sur le jour : « Séance faite ✓ » (résumé + récap) ou « Repos », prochaine séance en carte compacte |
+| v0.26 | Renforcement chevilles / genoux / hanches (2 × 15 min, 3 niveaux, sur la montre) ; « Mes jours » : changer jours de course / sports sans refaire le plan |
 
 ## Coûts récurrents
 

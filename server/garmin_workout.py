@@ -17,9 +17,11 @@ from garminconnect.workout import (
     RepeatGroup,
     RunningWorkout,
     StepType,
+    StrengthWorkout,
     TargetType,
     WorkoutSegment,
     create_repeat_group,
+    create_strength_timed_set,
 )
 
 RUNNING = {"sportTypeId": 1, "sportTypeKey": "running", "displayOrder": 1}
@@ -105,6 +107,8 @@ def _convert(steps: list[dict[str, Any]], c: _Counter, child_id: int | None) -> 
 
 def session_to_workout(session: dict[str, Any]) -> dict[str, Any]:
     """Construit le JSON à envoyer à Garmin Connect pour une séance."""
+    if any(st.get("kind") == "strength" for st in session["steps"]):
+        return strength_to_workout(session)
     c = _Counter()
     steps = _convert(session["steps"], c, None)
     name = f"RC {session['date'][5:]} {session['title']}"
@@ -113,5 +117,36 @@ def session_to_workout(session: dict[str, Any]) -> dict[str, Any]:
         estimatedDurationInSecs=int(session.get("min", 30)) * 60,
         description=(session.get("description") or "")[:500] or None,
         workoutSegments=[WorkoutSegment(segmentOrder=1, sportType=RUNNING, workoutSteps=steps)],
+    )
+    return workout.to_dict()
+
+
+STRENGTH = {"sportTypeId": 5, "sportTypeKey": "strength_training", "displayOrder": 5}
+
+
+def strength_to_workout(session: dict[str, Any]) -> dict[str, Any]:
+    """Renforcement : une série chronométrée par exercice (travail + récupération), nom de l'exercice affiché sur la montre."""
+    steps: list[RepeatGroup] = []
+    order = 1
+    for st in session["steps"]:
+        if st.get("kind") != "strength":
+            continue
+        category, exercise = (st.get("g") or ["", ""])[:2]
+        note = f"{st.get('name', '')} : {st.get('note') or ''}".strip(" :")[:250]
+        group = create_strength_timed_set(
+            category, order, int(st["sets"]), float(st["work"]), float(st["rest"]),
+            exercise_name=exercise, description=note or None,
+        )
+        group.childStepId = len(steps) + 1
+        for child in group.workoutSteps:
+            child.childStepId = group.childStepId
+        steps.append(group)
+        order += 3
+    total = sum(int(st["sets"]) * (int(st["work"]) + int(st["rest"])) for st in session["steps"] if st.get("kind") == "strength")
+    workout = StrengthWorkout(
+        workoutName=f"RC {session['date'][5:]} {session['title']}"[:60],
+        estimatedDurationInSecs=total,
+        description=(session.get("description") or "")[:500] or None,
+        workoutSegments=[WorkoutSegment(segmentOrder=1, sportType=STRENGTH, workoutSteps=steps)],
     )
     return workout.to_dict()
