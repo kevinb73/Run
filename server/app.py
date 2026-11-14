@@ -21,11 +21,13 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from garminconnect import Garmin
 from pydantic import BaseModel, Field
 
 from garmin_workout import session_to_workout
+import mcp_coach
 
 DATA_DIR = Path(os.environ.get("RUNCOACH_DATA", "/var/lib/runcoach"))
 TOKENS = DATA_DIR / "garmin"
@@ -382,3 +384,49 @@ def get_backup() -> dict[str, Any]:
     if not files:
         raise HTTPException(status_code=404, detail="Aucune sauvegarde sur le serveur.")
     return {"saved": files[-1].stem.removeprefix("backup-"), "data": json.loads(files[-1].read_text())}
+
+
+# ---------------------------------------------------------------- connecteur ChatGPT (MCP, lecture seule)
+
+def _latest_backup() -> tuple[str | None, dict | None]:
+    files = sorted(BACKUPS.glob("backup-*.json")) if BACKUPS.exists() else []
+    if not files:
+        return None, None
+    return files[-1].stem.removeprefix("backup-"), json.loads(files[-1].read_text())
+
+
+def _check_mcp_token(token: str) -> None:
+    if not API_KEY or not hmac.compare_digest(token, mcp_coach.mcp_token(API_KEY)):
+        raise HTTPException(status_code=404, detail="Not Found")
+
+
+@app.get("/mcp-url", dependencies=[Depends(require_key)])
+def mcp_url(request: Request) -> dict[str, Any]:
+    """Adresse à coller dans ChatGPT (affichée par l'app, qui connaît déjà la clé)."""
+    return {"path": f"/mcp/{mcp_coach.mcp_token(API_KEY)}"}
+
+
+@app.post("/mcp/{token}")
+async def mcp_endpoint(token: str, request: Request):
+    _check_mcp_token(token)
+    try:
+        message = json.loads(await request.body())
+    except json.JSONDecodeError:
+        return JSONResponse({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "JSON illisible"}}, status_code=400)
+    result = mcp_coach.handle(message, _latest_backup, lambda d: readiness(d), _code_version(),
+                              today=os.environ.get("RUNCOACH_TODAY"))  # date figée : tests uniquement
+    if result is None:
+        return Response(status_code=202)
+    return JSONResponse(result)
+
+
+@app.get("/mcp/{token}")
+def mcp_get(token: str):
+    _check_mcp_token(token)
+    return Response(status_code=405, headers={"Allow": "POST"})
+
+
+@app.delete("/mcp/{token}")
+def mcp_delete(token: str):
+    _check_mcp_token(token)
+    return Response(status_code=405, headers={"Allow": "POST"})

@@ -209,3 +209,72 @@ class ApiTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class McpTest(unittest.TestCase):
+    """Connecteur ChatGPT : adresse secrète, protocole, 5 outils en lecture seule sur une vraie sauvegarde."""
+
+    def setUp(self):
+        os.environ["RUNCOACH_TODAY"] = "2026-11-24"
+        self.addCleanup(os.environ.pop, "RUNCOACH_TODAY", None)
+        srv._garmin = FakeGarmin()
+        self.c = TestClient(srv.app)
+        self.h = {"X-Api-Key": "test-key"}
+        js = """
+        import { generatePlan } from './app/js/engine/plan.js';
+        const plan = generatePlan({ mode: 'fitness', fitnessGoal: 'regular', durationWeeks: 12, level: 'intermediate', weeklyKm: 5, longestRunKm: 3,
+          days: [0, 2, 6], longRunDay: 6, otherSports: [{ day: 2, kind: 'futsal' }, { day: 5, kind: 'referee' }] }, { today: '2026-11-14' });
+        const s = plan.weeks[0].sessions.find((x) => x.type === 'easy');
+        const log = { [s.id]: { done: true, feel: 'ok', actualKm: 2.4, durationSec: 1300, avgHr: 150, calories: 230, garminId: 1, source: 'garmin',
+          pain: { zone: 'knee', level: 'light' }, analysis: { verdict: 'success', details: ['ok'], note: null } } };
+        const acts = { 1: { id: 1, date: s.date, type: 'running', distanceKm: 2.4, durationSec: 1300, avgHr: 150, calories: 230, trainingLoad: 40 },
+          2: { id: 2, date: '2026-11-18', type: 'indoor_soccer', durationSec: 3600, calories: 600 } };
+        console.log(JSON.stringify({ plan, log, acts, known: { 1: s.id }, hr: { maxHr: 190, restHr: 55 } }));
+        """
+        out = subprocess.run(["node", "--input-type=module", "-e", js], cwd=ROOT, capture_output=True, text=True, check=True)
+        self.assertEqual(self.c.put("/backup", headers=self.h, content=out.stdout).status_code, 200)
+        self.path = self.c.get("/mcp-url", headers=self.h).json()["path"]
+
+    def rpc(self, method, params=None, mid=1):
+        r = self.c.post(self.path, json={"jsonrpc": "2.0", "id": mid, "method": method, "params": params or {}})
+        self.assertEqual(r.status_code, 200, r.text)
+        return r.json()
+
+    def test_secret_url(self):
+        self.assertEqual(self.c.get("/mcp-url").status_code, 401, "adresse donnée seulement avec la clé")
+        self.assertEqual(self.c.post("/mcp/mauvais", json={"jsonrpc": "2.0", "id": 1, "method": "ping"}).status_code, 404)
+        self.assertEqual(len(self.path.split("/")[-1]), 32)
+
+    def test_protocol(self):
+        init = self.rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "chatgpt"}})
+        self.assertEqual(init["result"]["protocolVersion"], "2025-06-18")
+        self.assertIn("tools", init["result"]["capabilities"])
+        n = self.c.post(self.path, json={"jsonrpc": "2.0", "method": "notifications/initialized"})
+        self.assertEqual(n.status_code, 202)
+        tools = self.rpc("tools/list")["result"]["tools"]
+        self.assertEqual({t["name"] for t in tools}, {"profil_et_plan", "seances_recentes", "bilan_mensuel", "forme_et_charge", "douleurs_et_ajustements"})
+        self.assertTrue(all(t["annotations"]["readOnlyHint"] for t in tools), "lecture seule")
+        self.assertEqual(self.rpc("nope")["error"]["code"], -32601)
+
+    def test_tools_read_backup(self):
+        for name, args in [("profil_et_plan", {}), ("seances_recentes", {"jours": 30}), ("bilan_mensuel", {"mois": "2026-11"}),
+                           ("forme_et_charge", {}), ("douleurs_et_ajustements", {})]:
+            res = self.rpc("tools/call", {"name": name, "arguments": args})["result"]
+            self.assertFalse(res["isError"], f"{name} : {res}")
+            data = res["structuredContent"]
+            self.assertEqual(json.loads(res["content"][0]["text"]), data)
+            self.assertTrue(data["donnees_au"])
+        plan = self.rpc("tools/call", {"name": "profil_et_plan", "arguments": {}})["result"]["structuredContent"]
+        self.assertEqual(plan["jours_course"], [0, 2, 6])
+        self.assertTrue(plan["prochaines_seances"])
+        rec = self.rpc("tools/call", {"name": "seances_recentes", "arguments": {"jours": 60}})["result"]["structuredContent"]
+        done = [s for s in rec["seances_du_plan"] if s["statut"] == "faite"]
+        self.assertEqual(done[0]["allure"], "9'02/km")
+        self.assertEqual(done[0]["douleur"]["zone"], "knee")
+        mois = self.rpc("tools/call", {"name": "bilan_mensuel", "arguments": {"mois": "2026-11"}})["result"]["structuredContent"]
+        self.assertEqual(mois["calories_garmin"], 830)
+        forme = self.rpc("tools/call", {"name": "forme_et_charge", "arguments": {}})["result"]["structuredContent"]
+        self.assertIn("ratio_aigu_chronique", forme)
+        douleurs = self.rpc("tools/call", {"name": "douleurs_et_ajustements", "arguments": {}})["result"]["structuredContent"]
+        self.assertEqual(len(douleurs["douleurs_signalees"]), 1)
+        self.assertEqual(self.rpc("tools/call", {"name": "inconnu"})["error"]["code"], -32602)

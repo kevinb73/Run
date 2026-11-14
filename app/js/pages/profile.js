@@ -10,6 +10,7 @@ import { DAY_LONG, DAY_SHORT, closeSheet, fmtDays, normalize, onPause, persist, 
 import { restartOnboarding } from './onboarding.js';
 import { doAdapt } from './today.js';
 import { bindGarminProfile, garminProfileCard, pushWeek, refreshPushed } from '../sync.js';
+import { api } from '../garmin.js';
 
 /** Modifier ses jours (course, sortie longue, sports, renforcement) sans refaire le plan. */
 export function daysSheet() {
@@ -82,6 +83,7 @@ export function renderProfile() {
       ${onPause(today()) ? `<p>En pause jusqu'au <strong>${esc(dateLong(state.pause.until))}</strong>.</p>` : '<button class="btn" id="pause-btn">Faire une pause</button>'}
     </section>
     ${garminProfileCard()}
+    ${state.garmin?.connected ? chatgptCard() : ''}
     <section class="card">
       <h2>Données</h2>
       <p class="muted">${state.garmin?.url ? 'Ton plan est sauvegardé automatiquement sur ton serveur (20 dernières versions). L\'export reste possible en complément.' : 'Tout est stocké sur ton téléphone. Exporte une sauvegarde de temps en temps.'}</p>
@@ -91,11 +93,12 @@ export function renderProfile() {
         <button class="btn" id="redo">Refaire le questionnaire</button>
       </div>
     </section>
-    <p class="muted center small">Run Coach · v0.32</p>`;
+    <p class="muted center small">Run Coach · v0.33</p>`;
 
   bindGarminProfile();
   view.querySelector('#pause-btn')?.addEventListener('click', pauseSheet);
   view.querySelector('#days-btn')?.addEventListener('click', daysSheet);
+  bindChatgpt();
   view.querySelector('#g-restore')?.addEventListener('click', () => {
     if (confirm('Remplacer le plan de ce téléphone par la dernière sauvegarde du serveur ?')) restoreSheet();
   });
@@ -148,4 +151,39 @@ export function readTimeFields(root) {
   const v = (n) => Number(root.querySelector(`[name=${n}]`).value || 0);
   const t = v('h') * 3600 + v('m') * 60 + v('s');
   return t > 0 ? t : null;
+}
+
+/** Coach ChatGPT : adresse secrète du connecteur (lecture seule) et mode d'emploi. */
+function chatgptCard() {
+  return `<section class="card" id="gpt-card"><h2>Coach ChatGPT</h2>
+    <p class="muted">ChatGPT peut lire ton plan, tes séances, ta charge et ta forme pour en discuter avec toi. Il ne lit qu'au moment où tu lui poses une question, et ne peut rien modifier.</p>
+    <button class="btn" id="gpt-url">Afficher l'adresse du connecteur</button>
+    <div id="gpt-out" hidden></div></section>`;
+}
+
+function bindChatgpt() {
+  view.querySelector('#gpt-url')?.addEventListener('click', async (ev) => {
+    const out = view.querySelector('#gpt-out');
+    ev.currentTarget.disabled = true;
+    try {
+      const { path } = await api(state.garmin, 'GET', '/mcp-url');
+      const url = state.garmin.url.replace(/\/$/, '') + path;
+      out.innerHTML = `<p class="gpt-url"><code>${esc(url)}</code></p>
+        <button class="btn primary" id="gpt-copy">Copier l'adresse</button>
+        <ol class="gpt-steps">
+          <li>Sur <strong>chatgpt.com</strong> (navigateur, pas l'app) : Paramètres → Applications / Connecteurs → Avancé → active le <strong>mode développeur</strong>.</li>
+          <li>Ajoute une application / un serveur MCP personnalisé : nom « Run Coach », colle l'adresse, authentification <strong>Aucune</strong>.</li>
+          <li>Dans une conversation, active « Run Coach » puis demande par exemple : « Comment s'est passée ma semaine ? »</li>
+        </ol>
+        <p class="muted small">⚠️ Cette adresse donne accès à tes données d'entraînement : ne la partage pas. Les menus de ChatGPT changent souvent ; si l'intitulé diffère, cherche « connecteur » ou « MCP ».</p>`;
+      out.hidden = false;
+      out.querySelector('#gpt-copy').addEventListener('click', async () => {
+        try { await navigator.clipboard.writeText(url); toast('Adresse copiée.'); } catch { toast('Copie impossible : sélectionne l\'adresse à la main.'); }
+      });
+    } catch (ex) {
+      out.innerHTML = `<p class="error">${/404|introuvable|Not Found/i.test(ex.message) ? 'Ton serveur n\'est pas encore à jour (mise à jour automatique dans l\'heure qui suit la fusion). Réessaie un peu plus tard.' : esc(ex.message)}</p>`;
+      out.hidden = false;
+      ev.currentTarget.disabled = false;
+    }
+  });
 }

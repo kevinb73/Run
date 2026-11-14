@@ -193,6 +193,23 @@ test('records : célébration sur Aujourd\'hui (une fois), carte dans Progrès',
   noErrors(p);
 });
 
+test('coach ChatGPT : adresse secrète affichée, le connecteur répond (protocole MCP)', async () => {
+  const p = await newPage(env.browser);
+  await seed(p, { extra: { garmin: GARMIN_CFG }, route: '#/profile' });
+  await p.waitForTimeout(800);
+  await p.click('#gpt-url'); await p.waitForTimeout(500);
+  const url = (await p.locator('.gpt-url code').innerText()).trim();
+  assert.match(url, /\/mcp\/[0-9a-f]{32}$/);
+  // L'app a sauvegardé son état sur le serveur : le connecteur doit pouvoir le lire.
+  await p.waitForTimeout(4500);
+  const call = async (method, params) => (await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) })).json();
+  assert.equal((await call('initialize', { protocolVersion: '2025-06-18' })).result.serverInfo.name, 'run-coach');
+  const res = (await call('tools/call', { name: 'profil_et_plan', arguments: {} })).result;
+  assert.equal(res.isError, false, JSON.stringify(res));
+  assert.deepEqual(res.structuredContent.jours_course, [0, 2, 6]);
+  noErrors(p);
+});
+
 test('toutes les pages s\'ouvrent sans erreur', async () => {
   const p = await newPage(env.browser);
   await seed(p);
