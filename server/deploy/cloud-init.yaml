@@ -1,0 +1,83 @@
+#cloud-config
+# Installation automatique du serveur Run Coach sur Ubuntu 24.04 (Hetzner).
+# Les valeurs __API_KEY__ et __BRANCH__ sont remplies par deploy.py au moment de la création.
+package_update: true
+package_upgrade: true
+packages:
+  - git
+  - python3-venv
+  - caddy
+  - unattended-upgrades
+
+write_files:
+  - path: /etc/runcoach.env
+    permissions: "0600"
+    content: |
+      RUNCOACH_API_KEY=__API_KEY__
+      RUNCOACH_DATA=/var/lib/runcoach
+
+  - path: /etc/systemd/system/runcoach.service
+    content: |
+      [Unit]
+      Description=Run Coach - synchronisation Garmin
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      User=runcoach
+      EnvironmentFile=/etc/runcoach.env
+      WorkingDirectory=/opt/run/server
+      ExecStart=/opt/runcoach-venv/bin/uvicorn app:app --host 127.0.0.1 --port 8000
+      Restart=always
+      RestartSec=5
+      NoNewPrivileges=true
+      ProtectSystem=strict
+      ProtectHome=true
+      PrivateTmp=true
+      ReadWritePaths=/var/lib/runcoach
+
+      [Install]
+      WantedBy=multi-user.target
+
+  - path: /usr/local/bin/runcoach-update
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      # Met à jour le serveur depuis la branche main du dépôt (si elle contient le serveur).
+      set -euo pipefail
+      cd /opt/run
+      git fetch --quiet origin main
+      git cat-file -e origin/main:server/app.py 2>/dev/null || exit 0
+      [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] && exit 0
+      git checkout --quiet -B main origin/main
+      /opt/runcoach-venv/bin/pip install --quiet -r server/requirements.txt
+      systemctl restart runcoach
+
+  - path: /etc/systemd/system/runcoach-update.service
+    content: |
+      [Unit]
+      Description=Mise à jour Run Coach
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/runcoach-update
+
+  - path: /etc/systemd/system/runcoach-update.timer
+    content: |
+      [Unit]
+      Description=Mise à jour Run Coach toutes les heures
+      [Timer]
+      OnBootSec=5min
+      OnUnitActiveSec=1h
+      [Install]
+      WantedBy=timers.target
+
+runcmd:
+  - useradd --system --home /var/lib/runcoach --shell /usr/sbin/nologin runcoach
+  - install -d -o runcoach -g runcoach -m 700 /var/lib/runcoach
+  - git clone --branch __BRANCH__ https://github.com/kevinb73/Run /opt/run
+  - python3 -m venv /opt/runcoach-venv
+  - /opt/runcoach-venv/bin/pip install --quiet -r /opt/run/server/requirements.txt
+  - IP=$(curl -s http://169.254.169.254/hetzner/v1/metadata/public-ipv4); printf '%s.sslip.io {\n\treverse_proxy 127.0.0.1:8000\n}\n' "$(echo "$IP" | tr . -)" > /etc/caddy/Caddyfile
+  - systemctl daemon-reload
+  - systemctl enable --now runcoach.service runcoach-update.timer
+  - systemctl restart caddy
