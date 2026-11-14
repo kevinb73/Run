@@ -155,11 +155,11 @@ test('bilan mensuel : carte dans Progrès, fenêtre le 1er du mois suivant (une 
     now: '2026-12-02T09:00:00',
     mutate: `const all = st.plan.weeks.flatMap((w) => w.sessions);
       const run = all.find((s) => s.type === 'easy' && s.date < '2026-12-01');
-      const fut = all.find((s) => s.sport === 'futsal' && s.date < '2026-12-01');
+      const fut = all.find((s) => s.alt === 'futsal' && s.date < '2026-12-01' && s.id !== run.id);
       st.acts = { 9: { id: 9, date: run.date, type: 'running', distanceKm: 2.6, durationSec: 1320, avgHr: 150, paceSecPerKm: 508, calories: 250 } };
       st.known = { 9: run.id };
       st.log[run.id] = { done: true, garminId: 9, source: 'garmin', actualKm: 2.6, feel: 'ok', at: run.date };
-      st.log[fut.id] = { done: true, feel: 'hard', sportMin: 60, at: fut.date };
+      st.log[fut.id] = { done: true, feel: 'hard', sportMin: 60, replacedBy: 'futsal', actualKm: 0, at: fut.date };
       st.monthlyShown = '2026-10';`,
   });
   await p.waitForTimeout(600);

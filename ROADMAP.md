@@ -142,6 +142,7 @@ Niche la plus prometteuse : **préparation physique des arbitres** (tests obliga
 | v0.28 | Test VMA placé un jour où les jambes sont fraîches (veille légère) ; séance faite en avance retirée de la montre ; mot du coach mis en avant ; passe anti-bug (semaine allégée lors d'un recalcul, envoi renfo non bloquant, test de robustesse étendu) |
 | v0.29 | Code découpé en modules (routeur, état, Garmin, un fichier par écran) ; parcours iPhone simulés dans le dépôt, lancés sur chaque PR |
 | v0.30 | « Pas dispo ce jour-là » : meilleurs jours de remplacement dans la semaine (règles de sécurité), ou sauter la séance |
+| v0.31 | Bilan mensuel (Progrès) : km, temps, calories, séances par activité (course, futsal, arbitrage, renfo), comparaison au mois précédent, mot du coach ; fenêtre automatique en début de mois |
 
 ## Coûts récurrents
 
