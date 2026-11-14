@@ -479,3 +479,6 @@ svg { flex: none; }
 .milestones { display: flex; flex-wrap: wrap; gap: 6px; }
 .ms { border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px; font-size: 0.8rem; color: var(--muted); }
 .ms.done { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); color: var(--text); }
+.gpt-url code { display: block; word-break: break-all; background: var(--surface-2); padding: 10px; border-radius: 10px; font-size: 0.8rem; }
+.gpt-steps { padding-left: 18px; margin: 12px 0; } .gpt-steps li { margin: 6px 0; }
+#gpt-card .btn { width: 100%; margin-top: 8px; }

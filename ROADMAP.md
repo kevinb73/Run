@@ -53,7 +53,7 @@ Les GPT personnalisés sont retirés par OpenAI le **11 décembre 2026** : on pa
 
 | # | Fonction | Détail | Effort |
 |---|---|---|---|
-| 2.1 | Serveur MCP sur le serveur Hetzner (lecture seule) | Plan, dernières séances + analyses, douleurs, charge, forme du jour, prédictions | 1–2 h |
+| 2.1 | ~~Serveur MCP (lecture seule)~~ → **fait en v0.33** : `server/mcp_coach.py`, 5 outils, adresse secrète dérivée de la clé (Profil → Coach ChatGPT) | — | — |
 | 2.2 | Branchement dans ChatGPT Plus | Plugins → « Add custom MCP server » (≈ 10 min de ton côté) | Petit |
 | 2.3 | Actions (mettre en pause, alléger une séance) | Seulement si l'écriture est disponible sur l'offre Plus | À confirmer |
 
@@ -144,6 +144,7 @@ Niche la plus prometteuse : **préparation physique des arbitres** (tests obliga
 | v0.30 | « Pas dispo ce jour-là » : meilleurs jours de remplacement dans la semaine (règles de sécurité), ou sauter la séance |
 | v0.31 | Bilan mensuel (Progrès) : km, temps, calories, séances par activité (course, futsal, arbitrage, renfo), comparaison au mois précédent, mot du coach ; fenêtre automatique en début de mois |
 | v0.32 | Records personnels (plus longue sortie / durée, meilleure allure, 5 km estimé), caps (20/30/45/60 min, 5/10 km, cumuls), série de semaines régulières ; célébration sur Aujourd'hui ; test statique des liens entre modules |
+| v0.33 | Coach ChatGPT : connecteur MCP en lecture seule sur le serveur (profil et plan, séances récentes, bilan mensuel, forme et charge, douleurs et ajustements), adresse secrète affichée dans Profil |
 
 ## Coûts récurrents
 
