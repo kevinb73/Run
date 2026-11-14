@@ -475,3 +475,26 @@ test('footing bonus : ajouté aujourd\'hui sans déplacer le plan, reconnu à l\
   const first = plan.weeks[0].sessions.find((s) => s.km);
   assert.ok(!r.log[first.id], 'la séance de lundi reste à faire');
 });
+
+test('footing dur ou cœur haut : le footing suivant (≤ 3 j) est allégé de 20 %, sinon rien', async () => {
+  const { applyEasyFeedback } = await import('../app/js/engine/easyfeedback.js');
+  const plan0 = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, weeklyKm: 5, longestRunKm: 3 }, { today: TODAY });
+  const { plan, id } = addBonus(plan0, TODAY);
+  const hr = { maxHr: 190, restHr: 60 };
+  const nextOf = (p) => p.weeks.flatMap((w) => w.sessions).find((s) => s.date > TODAY && ['easy', 'long'].includes(s.type));
+  const before = nextOf(plan);
+  // Correct + cœur dans la zone : inchangé
+  let r = applyEasyFeedback(plan, { [id]: { done: true, feel: 'ok', avgHr: 140 } }, id, hr);
+  assert.equal(r.note, null);
+  // Cœur haut (160 bpm ≈ 77 %… non ; 165 ≈ 81 % de réserve) : allégé
+  r = applyEasyFeedback(plan, { [id]: { done: true, feel: 'ok', avgHr: 165 } }, id, hr);
+  assert.ok(r.note, 'note attendue');
+  const after = nextOf(r.plan);
+  assert.equal(after.id, before.id);
+  assert.ok(after.min < before.min * 0.9, `${before.min} → ${after.min}`);
+  assert.ok(after.eased);
+  // Ressenti dur sans FC : allégé aussi ; pas deux fois
+  const r2 = applyEasyFeedback(plan, { [id]: { done: true, feel: 'hard' } }, id, null);
+  assert.ok(r2.note);
+  assert.equal(applyEasyFeedback(r2.plan, { [id]: { done: true, feel: 'hard' } }, id, null).note, null);
+});

@@ -11,7 +11,7 @@ import { addDays } from './dates.js';
 
 const EASY_TYPES = ['easy', 'long'];
 // Endurance fondamentale ≈ 59–74 % de la FC de réserve (≈ 65–79 % FC max).
-const LIMITS = { reserve: { low: 0.68, high: 0.78 }, max: { low: 0.76, high: 0.84 } };
+export const LIMITS = { reserve: { low: 0.68, high: 0.78 }, max: { low: 0.76, high: 0.84 } };
 
 function weekOf(plan, date) {
   return plan.weeks.find((w) => w.start <= date && date < addDays(w.start, 7));
