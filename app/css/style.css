@@ -364,13 +364,14 @@ h2 { font-weight: 800; }
 .today { padding: 4px 0 18px; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
 .eyebrow { color: var(--muted); text-transform: uppercase; letter-spacing: 0.16em; font-size: 0.72rem; font-weight: 600; margin: 4px 0 6px; }
 .today-link { text-decoration: none; display: block; }
-.mega { font-family: var(--display); font-size: clamp(3.4rem, 17vw, 5.2rem); line-height: 0.92; text-transform: uppercase; margin: 6px 0 4px; letter-spacing: -0.005em; word-break: break-word; }
-.today-detail { font-family: var(--display); font-size: 1.6rem; text-transform: uppercase; color: var(--accent); margin: 2px 0 6px; line-height: 1.05; }
+.mega { font-family: var(--display); font-size: clamp(2.2rem, 10vw, 3rem); line-height: 1; text-transform: uppercase; margin: 6px 0 4px; letter-spacing: -0.005em; word-break: break-word; }
+.today-detail { font-family: var(--display); font-size: 1.25rem; text-transform: uppercase; color: var(--muted); margin: 2px 0 6px; line-height: 1.05; }
 .today-stats { display: flex; gap: 28px; margin: 14px 0 18px; }
 .today-stats .range { font-size: 1.35rem; padding-top: 0.45rem; }
 .today-stats b { display: block; font-size: 2rem; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.1; }
 .today-stats span { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; }
-.today .btn.primary { width: 100%; min-height: 54px; }
+/* Bouton sobre sur cet écran : le volt plein sur toute la largeur agressait l'œil. */
+.today .btn.primary { width: 100%; min-height: 50px; background: #fff; color: #000; }
 .today .move-today { width: 100%; margin-top: 10px; border-color: var(--border); }
 .today-alt { display: flex; align-items: center; gap: 6px; margin: -6px 0 14px; }
 
