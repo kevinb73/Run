@@ -218,9 +218,9 @@ function renderToday() {
     persist();
     renderToday();
   }));
-  view.querySelector('#push-week')?.addEventListener('click', pushWeek);
+  view.querySelector('#push-week')?.addEventListener('click', () => pushWeek());
   view.querySelector('#sync-now')?.addEventListener('click', () => syncActivities(true));
-  syncActivities(false);
+  syncActivities(false).then(() => pushWeek({ silent: true }));
 }
 
 // ---------------- Garmin ----------------
@@ -238,14 +238,18 @@ function feelPrompt(t) {
   }).join('')}</section>`;
 }
 
+// Fenêtre d'envoi automatique : aujourd'hui + 7 jours (la semaine complète suivante est toujours couverte).
+const PUSH_DAYS = 7;
+const toPush = (t) => allSessions().filter((s) => !s.optional && s.date >= t && s.date <= addDays(t, PUSH_DAYS) && !state.log[s.id]?.done);
+
 function garminTodayBlock(t) {
   if (!garminOn()) return '';
-  const soon = allSessions().filter((s) => !s.optional && s.date >= t && s.date <= addDays(t, 6) && !state.log[s.id]?.done);
+  const soon = toPush(t);
   const missing = soon.filter((s) => state.pushed[s.id]?.date !== s.date).length;
   const last = state.lastSync ? new Date(state.lastSync).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—';
   return `<section class="card"><div class="row between"><h2>⌚ Garmin</h2><span class="muted small">Synchro ${last}</span></div>
-    ${missing ? `<p class="muted">${missing} séance(s) des 7 prochains jours pas encore sur ta montre.</p><button class="btn primary" id="push-week">Envoyer sur ma montre</button>`
-      : soon.length ? '<p class="muted">Les séances des 7 prochains jours sont sur ta montre ✓</p>' : ''}
+    ${missing ? `<p class="muted">${missing} séance(s) des 8 prochains jours pas encore sur ta montre.</p><button class="btn primary" id="push-week">Envoyer sur ma montre</button>`
+      : soon.length ? '<p class="muted">Les séances des 8 prochains jours sont sur ta montre ✓ (envoi automatique à chaque ouverture)</p>' : ''}
     <button class="btn ghost" id="sync-now">Récupérer mes courses</button>
     ${state.syncNotices?.length ? `<ul class="adj">${state.syncNotices.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}</section>`;
 }
@@ -267,17 +271,40 @@ async function repushIfNeeded(ids) {
   }
 }
 
-async function pushWeek() {
-  const t = today();
+let pushing = false;
+/** Envoie sur la montre les séances des 8 prochains jours qui n'y sont pas encore (silencieux si rien à faire). */
+async function pushWeek({ silent = false } = {}) {
+  if (!garminOn() || pushing) return;
+  const soon = toPush(today()).filter((s) => state.pushed[s.id]?.date !== s.date);
+  if (!soon.length) return;
+  pushing = true;
   const btn = view.querySelector('#push-week');
   if (btn) { btn.disabled = true; btn.textContent = 'Envoi en cours…'; }
-  const soon = allSessions().filter((s) => !s.optional && s.date >= t && s.date <= addDays(t, 6) && !state.log[s.id]?.done && state.pushed[s.id]?.date !== s.date);
   let ok = 0;
-  for (const s of soon) {
-    try { await pushSession(s); ok++; } catch (ex) { toast(ex.message); break; }
+  try {
+    for (const s of soon) {
+      try { await pushSession(s); ok++; } catch (ex) { if (!silent) toast(ex.message); break; }
+    }
+  } finally {
+    pushing = false;
   }
-  if (ok) toast(`${ok} séance(s) envoyée(s) : synchronise ta montre avec Garmin Connect.`);
-  route();
+  if (ok) toast(`${ok} séance(s) envoyée(s) sur ta montre ⌚`);
+  if (location.hash === '' || location.hash === '#/') route();
+}
+
+/** Après un recalcul du plan : met à jour (ou retire) sur la montre les séances déjà envoyées. */
+async function refreshPushed() {
+  if (!garminOn()) return;
+  const t = today();
+  for (const [id, info] of Object.entries(state.pushed)) {
+    if (info.date < t) continue;
+    const s = findSession(id);
+    try {
+      if (s && !s.optional) await pushSession(s);
+      else { await api(state.garmin, 'DELETE', `/workouts/${encodeURIComponent(id)}`); delete state.pushed[id]; persist(); }
+    } catch (ex) { toast(`Montre non mise à jour : ${ex.message}`); break; }
+  }
+  pushWeek({ silent: true });
 }
 
 let syncing = false;
@@ -426,6 +453,7 @@ function doAdapt(newRace = null) {
   const { plan, adjustment } = adaptPlan(state.plan, state.log, today(), newRace);
   state.plan = plan;
   persist();
+  refreshPushed();
   showSheet(`<h2>Plan réajusté</h2><ul>${adjustment.reasons.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>
     <button class="btn primary" data-close>OK</button>`);
   route();
@@ -593,7 +621,7 @@ function renderProfile() {
         <button class="btn" id="redo">Refaire le questionnaire</button>
       </div>
     </section>
-    <p class="muted center small">Run Coach · v0.7</p>`;
+    <p class="muted center small">Run Coach · v0.8</p>`;
 
   bindGarminProfile();
   view.querySelector('#new-race').addEventListener('click', () => {
