@@ -4,6 +4,7 @@
 import { generatePlan } from './plan.js';
 import { vdotFromPerformance } from './vdot.js';
 import { addDays, mondayOf, daysBetween } from './dates.js';
+import { dataSignals } from './coach.js';
 
 /**
  * Bilan des 14 derniers jours.
@@ -38,7 +39,7 @@ export function currentWeek(plan, today) {
  * @param newRace Optionnel : { distanceM, timeSec } d'une course ou d'un test récent.
  * @returns { plan, adjustment } ; adjustment décrit les décisions prises (affiché à l'utilisateur).
  */
-export function adaptPlan(plan, log, today, newRace = null) {
+export function adaptPlan(plan, log, today, newRace = null, hr = null) {
   const stats = recentStats(plan, log, today);
   const cur = currentWeek(plan, today) ?? plan.weeks[0];
   let vdot = cur.vdot;
@@ -54,6 +55,14 @@ export function adaptPlan(plan, log, today, newRace = null) {
   } else if (stats.done >= 3 && stats.easyShare >= 0.6 && stats.completion >= 0.9) {
     vdot += 0.5;
     reasons.push('Séances faciles et régulières : allures légèrement relevées.');
+  }
+
+  // Données réelles Garmin (allure + cœur sur les footings) : prioritaires sur le seul ressenti.
+  const signals = newRace ? null : dataSignals(plan, log, today, hr);
+  if (signals?.reasons.length) {
+    const feelDelta = vdot - cur.vdot;
+    vdot = cur.vdot + Math.max(-1, Math.min(1, feelDelta + signals.deltaVdot));
+    reasons.push(...signals.reasons);
   }
 
   let weeklyKm = plan.profile.weeklyKm;
@@ -79,7 +88,7 @@ export function adaptPlan(plan, log, today, newRace = null) {
   if (newRace) profile.recent = newRace;
 
   const fresh = generatePlan(profile, { today, startDate, vdotStart: vdot, weekOffset: keep.length ? keep.at(-1).index + 1 : 0 });
-  const adjustment = { date: today, reasons, vdotBefore: cur.vdot, vdotAfter: Math.round(vdot * 10) / 10 };
+  const adjustment = { date: today, reasons, vdotBefore: cur.vdot, vdotAfter: Math.round(vdot * 10) / 10, changed: Math.abs(vdot - cur.vdot) >= 0.05 || Math.round(weeklyKm) !== Math.round(cur.volumeKm) };
   return {
     plan: {
       ...fresh,

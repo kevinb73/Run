@@ -186,3 +186,44 @@ test('Garmin : course du jour, faite en avance, course libre intense', async () 
   assert.equal(r.known[3], 'free');
   assert.equal(r.plan.weeks.flatMap((w) => w.sessions).find((s) => s.id === hard.id).type, 'easy');
 });
+
+test('Garmin : futsal et arbitrage détectés automatiquement', async () => {
+  const { applyActivities } = await import('../app/js/engine/garminsync.js');
+  const otherSports = [{ day: 2, kind: 'futsal' }, { day: 5, kind: 'referee' }, { day: 6, kind: 'futsal' }];
+  const plan = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, days: [0, 3, 6], longRunDay: 6, otherSports }, { today: TODAY });
+  const w = plan.weeks[1];
+  const futsal = w.sessions.find((s) => s.type === 'sport' && s.sport === 'futsal');
+  const referee = w.sessions.find((s) => s.type === 'sport' && s.sport === 'referee');
+  const sundayRun = w.sessions.find((s) => s.alt === 'futsal');
+  const acts = [
+    { id: 10, date: futsal.date, start: `${futsal.date} 20:00`, type: 'indoor_soccer', durationSec: 3600, distanceKm: 0 },
+    { id: 11, date: referee.date, start: `${referee.date} 15:00`, type: 'running', durationSec: 5400, distanceKm: 9.5, paceSecPerKm: 568 },
+    { id: 12, date: sundayRun.date, start: `${sundayRun.date} 10:00`, type: 'soccer', durationSec: 3000, distanceKm: 0 },
+  ];
+  const r = applyActivities(plan, {}, acts, {});
+  assert.equal(r.log[futsal.id].done, true);
+  assert.equal(r.log[referee.id].done, true, 'course un jour d\'arbitrage = arbitrage');
+  assert.equal(r.log[sundayRun.id].replacedBy, 'futsal');
+  assert.equal(r.freeRuns.length, 0);
+});
+
+test('coach : cœur trop haut sur les footings → allures ralenties ; cœur bas et allure tenue → relevées', async () => {
+  const { dataSignals } = await import('../app/js/engine/coach.js');
+  const plan = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, easyPaceSec: 510, days: [0, 3, 6], longRunDay: 6 }, { today: TODAY });
+  const today = '2026-12-01';
+  const easy = plan.weeks.flatMap((w) => w.sessions).filter((s) => ['easy', 'long'].includes(s.type) && s.date < today && s.date >= '2026-11-17');
+  assert.ok(easy.length >= 3);
+  const hr = { maxHr: 190, restHr: 60 };
+  const mk = (avgHr, pace) => Object.fromEntries(easy.map((s) => [s.id, { done: true, source: 'garmin', paceSecPerKm: pace, avgHr }]));
+  const tooHigh = dataSignals(plan, mk(175, 520), today, hr); // réserve ≈ 88 %
+  assert.ok(tooHigh.deltaVdot < 0);
+  const fitter = dataSignals(plan, mk(135, 490), today, hr); // réserve ≈ 58 %, plus vite que le milieu de zone
+  assert.ok(fitter.deltaVdot > 0);
+  const noHr = dataSignals(plan, mk(undefined, 400), today, null);
+  assert.equal(noHr.deltaVdot, 0);
+  assert.ok(noHr.reasons.some((r) => r.includes('ralentis')));
+  // Intégration : le réajustement applique le signal
+  const { plan: next, adjustment } = adaptPlan(plan, mk(175, 520), today, null, hr);
+  assert.ok(adjustment.vdotAfter < adjustment.vdotBefore);
+  assert.ok(next.weeks.at(-1).paces.E[0] > plan.weeks.at(-1).paces.E[0], 'footings plus lents en fin de plan');
+});

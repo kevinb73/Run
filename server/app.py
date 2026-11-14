@@ -20,7 +20,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from garminconnect import Garmin
 from pydantic import BaseModel, Field
@@ -30,6 +30,9 @@ from garmin_workout import session_to_workout
 DATA_DIR = Path(os.environ.get("RUNCOACH_DATA", "/var/lib/runcoach"))
 TOKENS = DATA_DIR / "garmin"
 STATE_FILE = DATA_DIR / "state.json"
+BACKUPS = DATA_DIR / "backups"
+MAX_BACKUP_BYTES = 2_000_000
+KEEP_BACKUPS = 20
 API_KEY = os.environ.get("RUNCOACH_API_KEY", "")
 ALLOWED_ORIGINS = os.environ.get("RUNCOACH_ORIGINS", "https://kevinb73.github.io").split(",")
 
@@ -40,7 +43,7 @@ app = FastAPI(title="Run Coach sync", docs_url=None, redoc_url=None, openapi_url
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_methods=["GET", "POST", "DELETE"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["X-Api-Key", "Content-Type"],
     max_age=86400,
 )
@@ -246,11 +249,61 @@ def _summary(a: dict[str, Any]) -> dict[str, Any]:
 
 @app.get("/activities", dependencies=[Depends(require_key)])
 def activities(start: str | None = None, end: str | None = None) -> dict[str, Any]:
+    """Toutes les activités (course, futsal, autres) : l'app fait le tri."""
     end_d = date.fromisoformat(end) if end else date.today()
     start_d = date.fromisoformat(start) if start else end_d - timedelta(days=14)
     if (end_d - start_d).days > 120:
         raise HTTPException(status_code=400, detail="Période limitée à 120 jours.")
     g = garmin()
     raw = garmin_call(g.get_activities_by_date, start_d.isoformat(), end_d.isoformat())
-    runs = [_summary(a) for a in raw if "running" in ((a.get("activityType") or {}).get("typeKey") or "")]
-    return {"activities": sorted(runs, key=lambda x: x["start"] or "")}
+    acts = [_summary(a) for a in raw]
+    return {"activities": sorted(acts, key=lambda x: x["start"] or "")}
+
+
+@app.get("/garmin/profile", dependencies=[Depends(require_key)])
+def hr_profile() -> dict[str, Any]:
+    """FC max, FC repos et seuil tels que réglés dans Garmin (zones de course à pied de préférence)."""
+    g = garmin()
+    try:
+        zones = garmin_call(g.get_heart_rate_zones_v2) or []
+    except Exception:  # profil indisponible : l'app se contente alors de l'allure
+        zones = []
+    if isinstance(zones, dict):
+        zones = zones.get("heartRateZones") or zones.get("zones") or [zones]
+    by_sport = {(z.get("sport") or "").upper(): z for z in zones if isinstance(z, dict)}
+    z = by_sport.get("RUNNING") or by_sport.get("DEFAULT") or (zones[0] if zones else {})
+    return {
+        "maxHr": z.get("maxHeartRateUsed"),
+        "restHr": z.get("restingHeartRateUsed"),
+        "lthr": z.get("lactateThresholdHeartRateUsed"),
+    }
+
+
+# ---------------------------------------------------------------- sauvegarde du plan
+
+@app.put("/backup", dependencies=[Depends(require_key)])
+async def put_backup(request: Request) -> dict[str, Any]:
+    """Sauvegarde le plan et l'historique de l'app (on garde les 20 dernières versions)."""
+    body = await request.body()
+    if len(body) > MAX_BACKUP_BYTES:
+        raise HTTPException(status_code=413, detail="Sauvegarde trop volumineuse.")
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Sauvegarde illisible.") from exc
+    if not isinstance(data, dict) or "plan" not in data:
+        raise HTTPException(status_code=400, detail="Sauvegarde incomplète.")
+    BACKUPS.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y%m%dT%H%M%S", time.gmtime()) + f"{int(time.time() * 1000) % 1000:03d}"
+    (BACKUPS / f"backup-{stamp}.json").write_bytes(body)
+    for old in sorted(BACKUPS.glob("backup-*.json"))[:-KEEP_BACKUPS]:
+        old.unlink()
+    return {"saved": stamp}
+
+
+@app.get("/backup", dependencies=[Depends(require_key)])
+def get_backup() -> dict[str, Any]:
+    files = sorted(BACKUPS.glob("backup-*.json")) if BACKUPS.exists() else []
+    if not files:
+        raise HTTPException(status_code=404, detail="Aucune sauvegarde sur le serveur.")
+    return {"saved": files[-1].stem.removeprefix("backup-"), "data": json.loads(files[-1].read_text())}
