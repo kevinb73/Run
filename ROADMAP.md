@@ -150,6 +150,7 @@ Niche la plus prometteuse : **préparation physique des arbitres** (tests obliga
 | serveur | Coach ChatGPT branché (offre Go : Paramètres → Plugins → Ajouter → serveur MCP personnalisé, sans authentification). Correctif : jours envoyés en toutes lettres (ChatGPT décalait les jours de sport) |
 | v0.36 | Propositions de ChatGPT à valider dans l'app (outil MCP proposer_modification ; carte « ChatGPT propose » sur Aujourd'hui) ; séance sautée retirée de la montre |
 | v0.37 | Correctif d'affichage : la date du jour n'est plus mordue par l'accent du grand titre (« SÉANCE FAITE ») |
+| v0.38 | Date du jour (Aujourd'hui) plus grande et en casse normale, lisible à côté du grand titre |
 
 ## Coûts récurrents
 
