@@ -239,6 +239,48 @@ function alreadyRan(t) {
     || state.freeRuns.some((r) => r.date === t);
 }
 
+/** Haut de l'écran quand rien n'est à faire aujourd'hui : séance faite (résumé) ou repos. */
+function todayState(t) {
+  const done = allSessions().filter((x) => x.date === t && x.type !== 'sport' && state.log[x.id]?.done && !state.log[x.id]?.replacedBy);
+  const sport = allSessions().find((x) => x.date === t && x.type === 'sport');
+  const free = state.freeRuns.filter((r) => r.date === t);
+  if (done.length) {
+    const s = done[0], e = state.log[s.id];
+    const km = e.actualKm ?? s.km, min = e.durationSec ? e.durationSec / 60 : s.min;
+    const fr = (n) => Number(n).toLocaleString('fr-FR', { maximumFractionDigits: 1 });
+    return `<section class="today">
+      <p class="eyebrow">Aujourd'hui · ${esc(dateShort(t))}</p>
+      <h1 class="mega">Séance faite ✓</h1>
+      <p class="today-detail">${esc(s.title)}</p>
+      <div class="today-stats"><div><b>${fr(km)}</b><span>km</span></div><div><b>${Math.round(min)}</b><span>min</span></div>${e.avgHr ? `<div><b>${e.avgHr}</b><span>bpm moy.</span></div>` : ''}</div>
+      <a class="btn primary" href="#/recap/${s.id}">Voir le récap</a>
+    </section>`;
+  }
+  if (free.length) {
+    const r = free[0];
+    return `<section class="today"><p class="eyebrow">Aujourd'hui · ${esc(dateShort(t))}</p>
+      <h1 class="mega">Course libre ✓</h1>
+      <div class="today-stats"><div><b>${Number(r.distanceKm).toLocaleString('fr-FR', { maximumFractionDigits: 1 })}</b><span>km</span></div></div></section>`;
+  }
+  return `<section class="today"><p class="eyebrow">Aujourd'hui · ${esc(dateShort(t))}</p>
+    <h1 class="mega">Repos</h1>
+    <p class="muted">${sport ? `${sportIcon(sport.sport)} ${esc(sport.title)}` : 'Pas de course prévue : la récupération fait partie de l\'entraînement.'}</p>
+  </section>`;
+}
+
+/** Prochaine séance, en version compacte, sous l'état du jour. */
+function nextCard(s, t, canMove, bonusOk) {
+  const w = weekOf(s.date);
+  const E = w?.paces?.E;
+  return `<section class="card next-card">
+    <p class="eyebrow">Prochaine séance · ${esc(dateShort(s.date))}</p>
+    <a class="next-link" href="#/session/${s.id}"><span class="icon">${iconOf(s)}</span><span><strong>${esc(s.title)}</strong>
+      <small class="muted">${Number(s.km).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} km · ${Math.round(s.min)} min${['easy', 'long'].includes(s.type) && E ? ` · ${pace(E[0])}–${pace(E[1])}/km` : ''}</small></span></a>
+    ${canMove ? `<button class="btn ghost move-today" data-move="${s.id}">Faire cette séance aujourd'hui</button>` : ''}
+    ${bonusOk ? '<button class="btn ghost move-today" id="add-bonus">+ Courir en plus aujourd\'hui</button>' : ''}
+  </section>`;
+}
+
 function todayHero(s, t, canMove, bonusOk) {
   const [main, ...rest] = s.title.split(' — ');
   const detail = rest.join(' — ');
@@ -304,7 +346,7 @@ function renderToday() {
   view.innerHTML = `
     ${pauseBlock(t)}
     ${painBlock(t)}
-    ${next ? todayHero(next, t, canMove, bonusOk) : finished}
+    ${next ? (next.date === t ? todayHero(next, t, canMove, bonusOk) : todayState(t) + nextCard(next, t, canMove, bonusOk)) : finished}
     <header class="cycle-strip">${hero}</header>
     ${missed.length ? `<section class="card warn"><p><strong>${missed.length} séance(s) passée(s) sans retour.</strong> Indique si tu les as faites : c'est ce qui permet d'adapter le plan.</p>${missed.map((s) => sessionCard(s)).join('')}</section>` : ''}
     ${readinessBlock(t, next)}
@@ -1245,7 +1287,7 @@ function renderProfile() {
         <button class="btn" id="redo">Refaire le questionnaire</button>
       </div>
     </section>
-    <p class="muted center small">Run Coach · v0.24</p>`;
+    <p class="muted center small">Run Coach · v0.25</p>`;
 
   bindGarminProfile();
   view.querySelector('#pause-btn')?.addEventListener('click', pauseSheet);

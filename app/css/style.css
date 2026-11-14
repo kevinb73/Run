@@ -434,3 +434,11 @@ h2 { font-weight: 800; }
 .tabbar a.active span { color: var(--accent); }
 .toast { background: var(--accent); color: var(--accent-ink); }
 svg { flex: none; }
+
+/* Prochaine séance (compacte) quand rien n'est prévu aujourd'hui */
+.next-card .eyebrow { margin-top: 0; }
+.next-link { display: flex; align-items: center; gap: 12px; text-decoration: none; color: inherit; padding: 4px 0 8px; }
+.next-link .icon { width: 28px; height: 28px; color: var(--muted); flex: none; }
+.next-link strong { display: block; font-size: 1.05rem; }
+.next-link small { display: block; margin-top: 2px; }
+.next-card .move-today { width: 100%; margin-top: 8px; }
