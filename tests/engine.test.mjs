@@ -96,3 +96,22 @@ test('remise en forme : réajustement possible', () => {
   const { plan: next } = adaptPlan(plan, {}, '2026-12-02');
   assert.equal(next.weeks.at(-1).sessions.at(-1).date, plan.weeks.at(-1).sessions.at(-1).date);
 });
+
+test('futsal : jamais de séance dure le lendemain, affiché en facultatif', () => {
+  const otherSports = [{ day: 2, kind: 'futsal' }, { day: 6, kind: 'futsal' }];
+  const plan = generatePlan({ ...base, days: [0, 1, 3, 5], longRunDay: 5, otherSports }, { today: TODAY });
+  const easyTypes = ['easy', 'long', 'sport', 'race'];
+  for (const s of plan.weeks.flatMap((w) => w.sessions)) {
+    const wd = (new Date(s.date).getUTCDay() + 6) % 7;
+    if ([3, 0].includes(wd)) assert.ok(easyTypes.includes(s.type), `${s.date} ${s.title} après futsal`);
+  }
+  assert.ok(plan.weeks[1].sessions.some((s) => s.type === 'sport' && s.optional));
+  assert.ok(plan.weeks.some((w) => w.sessions.some((s) => ['hills', 'threshold', 'intervals', 'race-pace', 'fartlek'].includes(s.type))), 'il reste de la qualité');
+  assert.ok(!plan.weeks.at(-1).sessions.some((s) => s.type === 'sport'), 'pas de futsal en semaine de course');
+});
+
+test('remise en forme : 2 jours de course possibles avec futsal', () => {
+  const plan = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, days: [0, 4], longRunDay: 4, otherSports: [{ day: 2, kind: 'futsal' }] }, { today: TODAY });
+  assert.equal(plan.weeks[1].sessions.filter((s) => !s.optional).length, 2);
+  assert.throws(() => generatePlan({ ...base, days: [0, 4] }, { today: TODAY }), /3 jours/);
+});
