@@ -1,7 +1,7 @@
 // Déplacement d'une séance (ex. : « je fais la séance de lundi dès aujourd'hui »),
 // avec vérification des règles de sécurité (pas deux séances dures collées).
 
-import { addDays, weekday } from './dates.js';
+import { addDays, weekday, daysBetween } from './dates.js';
 import { easyRun, estimate } from './workouts.js';
 
 export const HARD_TYPES = ['threshold', 'intervals', 'hills', 'fartlek', 'race-pace', 'test'];
@@ -154,4 +154,39 @@ export function addBonus(plan, today) {
   };
   week.sessions = [...week.sessions, bonus].sort((a, b) => a.date.localeCompare(b.date));
   return { plan: copy, id: bonus.id };
+}
+
+const DAY_NAMES = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
+
+/**
+ * « Pas dispo ce jour-là » : jours de remplacement possibles dans la même semaine (à partir d'aujourd'hui),
+ * du meilleur au moins bon. Un jour déjà occupé par une course n'est pas proposé (pas de double séance).
+ * Séance dure / longue : jamais un jour de sport ni son lendemain, ni collée à une autre séance dure ou longue.
+ * @returns [{ date, label, note }]
+ */
+export function unavailableOptions(plan, log, id, today) {
+  const all = plan.weeks.flatMap((w) => w.sessions);
+  const s = all.find((x) => x.id === id);
+  const week = plan.weeks.find((w) => w.sessions.some((x) => x.id === id));
+  if (!s || !week) return [];
+  const sportDays = sportDaysOf(plan);
+  const heavy = (x) => HARD_TYPES.includes(x.type) || x.type === 'long';
+  const runOn = (d) => all.find((x) => x.date === d && x.id !== id && !x.optional && x.type !== 'strength' && !log[x.id]?.skipped);
+  const out = [];
+  for (let k = 0; k < 7; k++) {
+    const d = addDays(week.start, k);
+    if (d < today || d === s.date || runOn(d)) continue;
+    const wd = weekday(d);
+    const sportDay = sportDays.includes(wd), afterSport = sportDays.includes((wd + 6) % 7);
+    const nextHeavy = [runOn(addDays(d, 1)), runOn(addDays(d, -1))].some((x) => x && heavy(x));
+    if (heavy(s) && (sportDay || afterSport || nextHeavy)) continue;
+    let score = 0, note = '';
+    if (sportDay) { score += 3; note = 'jour de sport possible : footing seulement si tu n\'y vas pas'; }
+    else if (afterSport) { score += 1; note = 'lendemain de sport : reste très facile'; }
+    if (nextHeavy) { score += 2; note ||= 'à côté d\'une séance exigeante : reste très facile'; }
+    if (heavy(s) && sportDays.includes((wd + 1) % 7)) { score += 2; note ||= 'veille d\'un futsal / match : garde des jambes'; }
+    score += Math.abs(daysBetween(s.date, d)) * 0.1;
+    out.push({ date: d, label: DAY_NAMES[wd], note, score });
+  }
+  return out.sort((a, b) => a.score - b.score).slice(0, 3).map(({ score, ...o }) => o);
 }

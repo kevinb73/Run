@@ -128,6 +128,27 @@ test('Garmin : course importée, séance avancée retirée de la montre à sa da
   noErrors(p);
 });
 
+test('pas dispo : la séance passe au jour proposé (sans toucher aux autres), ou est sautée', async () => {
+  const p = await newPage(env.browser);
+  await seed(p);
+  const st0 = await stored(p);
+  const s = st0.plan.weeks[0].sessions.find((x) => x.type === 'easy');
+  await p.evaluate((id) => { location.hash = `#/session/${id}`; }, s.id); await p.waitForTimeout(300);
+  await p.click('#unavail'); await p.waitForTimeout(200);
+  const date = await p.locator('.unav-opt').first().getAttribute('data-date');
+  await p.locator('.unav-opt').first().click(); await p.waitForTimeout(300);
+  const st = await stored(p);
+  const moved = st.plan.weeks.flatMap((w) => w.sessions).find((x) => x.id === s.id);
+  assert.equal(moved.date, date);
+  assert.equal(moved.movedFrom, s.date);
+  assert.equal(st.plan.weeks.flatMap((w) => w.sessions).filter((x) => x.date === date && !x.optional && x.type !== 'strength').length, 1, 'une seule course ce jour-là');
+  // Sauter
+  await p.evaluate((id) => { location.hash = `#/session/${id}`; }, s.id); await p.waitForTimeout(300);
+  await p.click('#unavail'); await p.waitForTimeout(200); await p.click('#unav-skip'); await p.waitForTimeout(300);
+  assert.ok((await stored(p)).log[s.id]?.skipped);
+  noErrors(p);
+});
+
 test('toutes les pages s\'ouvrent sans erreur', async () => {
   const p = await newPage(env.browser);
   await seed(p);

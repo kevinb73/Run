@@ -452,3 +452,7 @@ svg { flex: none; }
 .recap-conclusion .coach-lead { font-size: 1.15rem; font-weight: 700; color: var(--text, #fff); }
 .coach-quote { display: block; text-decoration: none; color: inherit; border-left: 3px solid var(--accent); padding: 8px 0 8px 12px; margin: 0 0 16px; font-size: 1rem; }
 .coach-quote .coach-head { margin-bottom: 4px; }
+.unav-opt, #unav-skip { width: 100%; margin-top: 8px; display: block; text-align: left; }
+.unav-opt small { font-weight: 500; }
+.unav-opt small { display: block; text-transform: none; letter-spacing: 0; font-size: 0.8rem; margin-top: 2px; }
+.btn.primary.unav-opt small { color: inherit; opacity: 0.7; }

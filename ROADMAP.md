@@ -68,7 +68,7 @@ Coût : 0 € (abonnement ChatGPT existant). Points d'attention : confidentialit
 | 3.1 | ~~Veille du test VMA allégée~~ → **fait en v0.28** (test un jour « frais », veille sans accélérations ni renfo) | Test fiable | — |
 | 3.2 | ~~Modifier ses jours sans refaire le plan~~ → **fait en v0.26** (Profil → Mes jours) | Planning futsal / arbitrage variable ; garder l'historique | — |
 | 3.3 | ~~Renforcement~~ → **fait en v0.26** (2 × 15 min / sem., 3 niveaux, envoyé sur la montre) | Chevilles, genoux, tendons : le risque n° 1 avec le futsal | — |
-| 3.4 | Indisponibilités ponctuelles (« pas dispo jeudi ») | Redistribuer la semaine | Petit |
+| 3.4 | ~~Indisponibilités ponctuelles~~ → **fait en v0.30** (fiche séance → « Pas dispo ce jour-là ») | — | — |
 
 ### 3.5 — Préparation au Yo-Yo test d'arbitre (priorité de la phase 3)
 
@@ -140,6 +140,8 @@ Niche la plus prometteuse : **préparation physique des arbitres** (tests obliga
 | v0.26 | Renforcement chevilles / genoux / hanches (2 × 15 min, 3 niveaux, sur la montre) ; « Mes jours » : changer jours de course / sports sans refaire le plan |
 | v0.27 | Plans « à l'épreuve des mises à jour » : version du moteur, recalcul automatique de la suite à chaque nouveauté, historique et bonus conservés |
 | v0.28 | Test VMA placé un jour où les jambes sont fraîches (veille légère) ; séance faite en avance retirée de la montre ; mot du coach mis en avant ; passe anti-bug (semaine allégée lors d'un recalcul, envoi renfo non bloquant, test de robustesse étendu) |
+| v0.29 | Code découpé en modules (routeur, état, Garmin, un fichier par écran) ; parcours iPhone simulés dans le dépôt, lancés sur chaque PR |
+| v0.30 | « Pas dispo ce jour-là » : meilleurs jours de remplacement dans la semaine (règles de sécurité), ou sauter la séance |
 
 ## Coûts récurrents
 

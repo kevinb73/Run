@@ -609,3 +609,25 @@ test('test VMA : jamais le lendemain du futsal / de la sortie longue ; veille al
   assert.equal(w.sessions.filter((s) => !s.optional).length, 3, 'toujours 3 séances cette semaine');
 });
 function addDaysT(iso, n) { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+
+test('pas dispo : jours de remplacement sûrs dans la semaine, jamais sur une autre course', async () => {
+  const { unavailableOptions } = await import('../app/js/engine/reschedule.js');
+  const otherSports = [{ day: 2, kind: 'futsal' }, { day: 6, kind: 'futsal' }, { day: 5, kind: 'referee' }];
+  const plan = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, weeklyKm: 5, longestRunKm: 3, days: [0, 2, 6], longRunDay: 6, otherSports }, { today: TODAY });
+  const w = plan.weeks[1];
+  const runs = w.sessions.filter((s) => !s.optional && s.type !== 'strength');
+  const runDates = new Set(runs.map((s) => s.date));
+  const wd = (d) => (new Date(d).getUTCDay() + 6) % 7;
+  for (const s of runs) {
+    const opts = unavailableOptions(plan, {}, s.id, w.start);
+    assert.ok(opts.length >= 1, `au moins une option pour ${s.title}`);
+    for (const o of opts) {
+      assert.ok(!runDates.has(o.date), 'pas sur une autre course');
+      assert.ok(o.date >= w.start && o.date <= addDaysT(w.start, 6), 'même semaine');
+      if (s.type === 'long') assert.ok(![2, 6, 5, 3, 0].includes(wd(o.date)), `sortie longue : ni sport ni lendemain (${o.label})`);
+    }
+  }
+  // Rien avant aujourd'hui
+  const mid = addDaysT(w.start, 3);
+  for (const o of unavailableOptions(plan, {}, runs.at(-1).id, mid)) assert.ok(o.date >= mid);
+});
