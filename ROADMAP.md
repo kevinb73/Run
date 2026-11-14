@@ -94,6 +94,7 @@ Piste commerciale associée : niche « préparation physique des arbitres » (vo
 | 4.2 | Prédiction 10 km dans Progrès | Quand la sortie longue dépasse 10–12 km | Petit |
 | 4.3 | Suivi des chaussures (km par paire) | Changer avant usure | Petit |
 | 4.4 | Ajustement chaleur (> 25 °C) | Utile à partir du printemps | Petit |
+| 4.5 | **Trouver une boucle** de la distance du jour autour de soi (carte OpenStreetMap, calcul OpenRouteService/GraphHopper, préférence terrain souple/plat) ; envoi sur la montre si l'API le permet, sinon fichier GPX | En attendant : « Parcours aller-retour » de la Forerunner 965. Pas avant plusieurs semaines de course | ~½ journée |
 
 ---
 
@@ -131,6 +132,8 @@ Niche la plus prometteuse : **préparation physique des arbitres** (tests obliga
 | v0.16 | Nouvelle identité visuelle (noir / volt, Anton + Inter, icônes dessinées, séance du jour en premier) |
 | v0.17–v0.18 | Écran Aujourd'hui plus sobre (titre réduit, bouton volt adouci) |
 | v0.19 | Petite base (sortie max < 6 km) : plan calé sur le niveau réel (≈ 20–30 min/séance au départ, sortie longue +15 %/sem., Fondation sans séance de qualité) |
+| v0.20–v0.21 | Séance avancée avant le début du plan reconnue ; « Courir en plus aujourd'hui » (footing bonus ~25 min sans rien décaler) |
+| v0.22 | Footing dur ou cœur trop haut → footing suivant (≤ 3 j) allégé de 20 %, sans accélérations |
 
 ## Coûts récurrents
 

@@ -1,9 +1,10 @@
 import * as store from './store.js';
 import { generatePlan, PHASES, FITNESS_GOALS, SPORTS } from './engine/plan.js';
 import { adaptPlan, recentStats, currentWeek } from './engine/adapt.js';
-import { canMoveToToday, moveSession, downgradeToEasy, findSafeDay, missedKeySession, makeUp, shortenEasy, HARD_TYPES } from './engine/reschedule.js';
+import { canAddBonus, addBonus, canMoveToToday, moveSession, downgradeToEasy, findSafeDay, missedKeySession, makeUp, shortenEasy, HARD_TYPES } from './engine/reschedule.js';
 import { applyActivities } from './engine/garminsync.js';
 import { analyzeSession, applyVerdict, QUALITY_TYPES } from './engine/analysis.js';
+import { applyEasyFeedback } from './engine/easyfeedback.js';
 import { loadStatus, activityLoad, LOAD_LABELS } from './engine/load.js';
 import { readinessAdvice, formClass, LEVEL_FR, HRV_FR } from './engine/readiness.js';
 import { api, sessionPayload } from './garmin.js';
@@ -232,7 +233,7 @@ function sessionCard(s, { big = false } = {}) {
 }
 
 /** Grand bloc « séance du jour » : ce qu'on doit voir en premier en ouvrant l'app. */
-function todayHero(s, t, canMove) {
+function todayHero(s, t, canMove, bonusOk) {
   const [main, ...rest] = s.title.split(' — ');
   const detail = rest.join(' — ');
   const w = weekOf(s.date);
@@ -249,6 +250,7 @@ function todayHero(s, t, canMove) {
     ${s.alt ? `<p class="muted today-alt">ou ${sportIcon(s.alt)} ${esc(SPORTS[s.alt].label.toLowerCase())} si tu y vas</p>` : ''}
     <a class="btn primary" href="#/session/${s.id}">Voir la séance</a>
     ${canMove ? `<button class="btn ghost move-today" data-move="${s.id}">Faire cette séance aujourd'hui</button>` : ''}
+    ${bonusOk ? '<button class="btn ghost move-today" id="add-bonus">+ Courir en plus aujourd\'hui</button>' : ''}
   </section>`;
 }
 
@@ -289,11 +291,13 @@ function renderToday() {
   const finished = fitness
     ? `<section class="card"><h2>Cycle terminé</h2><p>Le cycle suivant repart de ton niveau actuel${p.profile.fitnessGoal === 'restart' ? ' : passage au mode « Courir régulièrement »' : ''}.</p><button class="btn primary" id="new-cycle">Lancer le cycle suivant</button></section>`
     : '<section class="card"><p>Plan terminé. Bravo ! Refais le questionnaire (onglet Profil) pour un nouvel objectif.</p></section>';
-  const canMove = next && canMoveToToday(next, state.log, t) && painAdvice(p, state.log, t, state.painResolvedAt)?.level !== 'stop';
+  const painStop = painAdvice(p, state.log, t, state.painResolvedAt)?.level === 'stop';
+  const canMove = next && canMoveToToday(next, state.log, t) && !painStop;
+  const bonusOk = next && next.date !== t && !painStop && !onPause(t) && canAddBonus(p, state.log, t);
   view.innerHTML = `
     ${pauseBlock(t)}
     ${painBlock(t)}
-    ${next ? todayHero(next, t, canMove) : finished}
+    ${next ? todayHero(next, t, canMove, bonusOk) : finished}
     <header class="cycle-strip">${hero}</header>
     ${missed.length ? `<section class="card warn"><p><strong>${missed.length} séance(s) passée(s) sans retour.</strong> Indique si tu les as faites : c'est ce qui permet d'adapter le plan.</p>${missed.map((s) => sessionCard(s)).join('')}</section>` : ''}
     ${readinessBlock(t, next)}
@@ -309,6 +313,7 @@ function renderToday() {
   view.querySelector('#adapt')?.addEventListener('click', () => doAdapt());
   view.querySelector('#new-cycle')?.addEventListener('click', newCycle);
   view.querySelector('[data-move]')?.addEventListener('click', (ev) => moveToToday(ev.currentTarget.dataset.move));
+  view.querySelector('#add-bonus')?.addEventListener('click', addBonusToday);
   view.querySelectorAll('[data-feel]').forEach((b) => b.addEventListener('click', () => {
     const [id, feel] = b.dataset.feel.split(':');
     state.log[id] = { ...state.log[id], feel };
@@ -370,11 +375,15 @@ async function analyzePending() {
         try { ({ laps } = await api(state.garmin, 'GET', `/activities/${e.garminId}/laps`)); } catch { /* analyse au ressenti */ }
       }
       const a = analyzeSession(s, e, laps, weekOf(s.date)?.paces);
-      const r = applyVerdict(state.plan, state.log, s.id, a.verdict);
+      let r = applyVerdict(state.plan, state.log, s.id, a.verdict);
       if (r.note) {
         state.plan = r.plan;
         const next = allSessions().filter((x) => x.adjustedFrom && x.type === s.type && x.date > s.date)[0];
         if (next) repushIfNeeded([next.id]);
+      } else {
+        // Footing / sortie longue : le footing suivant (≤ 3 jours) est allégé si la séance a été dure.
+        r = applyEasyFeedback(state.plan, state.log, s.id, state.hr);
+        if (r.note) { state.plan = r.plan; repushIfNeeded([r.nextId]); }
       }
       state.log[s.id] = { ...e, ...(laps ? { laps } : {}), analysis: { verdict: a.verdict, details: a.details, note: r.note, source: a.source } };
       if (s.date >= addDays(t, -1) && !e.recapShown) openRecap = s.id;
@@ -753,6 +762,21 @@ function bindGarminProfile() {
     persist();
     renderProfile();
   });
+}
+
+/** Ajoute un footing facile aujourd'hui, en plus du plan (aucune séance déplacée). */
+function addBonusToday() {
+  const t = today();
+  const { plan, id } = addBonus(state.plan, t);
+  state.plan = plan;
+  persist();
+  const s = findSession(id);
+  showSheet(`<h2>Footing bonus ajouté</h2>
+    <p><strong>${Math.round(s.min)} min très faciles</strong> aujourd'hui. Le reste du plan ne bouge pas.</p>
+    <p class="muted">Garde-le vraiment tranquille : c'est du volume en plus, pas une séance à réussir.</p>
+    <button class="btn primary" data-close>OK</button>`);
+  pushWeek({ silent: true });
+  location.hash = `#/session/${id}`;
 }
 
 /** Avance une séance à aujourd'hui, en vérifiant les règles de sécurité. */
@@ -1205,7 +1229,7 @@ function renderProfile() {
         <button class="btn" id="redo">Refaire le questionnaire</button>
       </div>
     </section>
-    <p class="muted center small">Run Coach · v0.20</p>`;
+    <p class="muted center small">Run Coach · v0.22</p>`;
 
   bindGarminProfile();
   view.querySelector('#pause-btn')?.addEventListener('click', pauseSheet);
