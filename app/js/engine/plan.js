@@ -223,7 +223,9 @@ export function generatePlan(profile, opts) {
 
   // --- Volume ---
   const sessionCap = nSessions * KM_PER_SESSION[level];
-  const startVolume = Math.max(profile.weeklyKm || 0, nSessions * 4);
+  // Petite base (sortie la plus longue < 6 km) : on part du niveau réel au lieu d'un plancher de 4 km/séance.
+  const lowBase = profile.longestRunKm != null && profile.longestRunKm < 6;
+  const startVolume = Math.max(profile.weeklyKm || 0, nSessions * (lowBase ? 2.5 : 4));
   let peak = Math.max(Math.min(race.peak[level], sessionCap), Math.min(startVolume, sessionCap));
   // Routine : on stabilise un volume raisonnable plutôt que de viser un pic.
   if (regular) peak = Math.min(peak, Math.max(startVolume * 1.4, startVolume + 10));
@@ -233,7 +235,7 @@ export function generatePlan(profile, opts) {
   }
 
   const longFrac = nSessions <= 2 ? 0.45 : nSessions === 3 ? 0.36 : nSessions === 4 ? 0.32 : 0.28;
-  const minEasy = level === 'beginner' ? 3 : 5;
+  const minEasy = lowBase ? 2.5 : level === 'beginner' ? 3 : 5;
   const weekOffset = opts.weekOffset ?? 0;
 
   // Test 6 min : en fin de Fondation (remise en forme), ou en semaine 2 d'une prépa course sans chrono.
@@ -304,6 +306,8 @@ export function generatePlan(profile, opts) {
       let qTypes = qualityPlan(phase, level, idxInPhase, nSessions, recovery, profile.raceDistance, regular);
       // Le futsal/arbitrage apporte déjà de l'intensité : une séance dure de moins (aucune en mode « régulier »).
       if (sportDays.length) qTypes = regular ? [] : qTypes.slice(0, Math.max(1, qTypes.length - 1));
+      // Petite base : la phase Fondation reste en endurance pure (les séances de qualité durent 45–55 min).
+      if (lowBase && phase === 'base') qTypes = [];
       const slots = assignDays(days, profile.longRunDay, qTypes.length, sportDays);
       qTypes = qTypes.slice(0, slots.quality.length);
       // Un jour à la fois « course » et « sport possible » : une seule carte « séance OU sport ».
@@ -318,10 +322,12 @@ export function generatePlan(profile, opts) {
       } else {
         const progress = Math.min(1, i / Math.max(1, trainingWeeks - 2));
         const ramp = longStart + (longCap - longStart) * progress;
-        longKm = Math.min(longCap, Math.max(volume * longFrac, ramp), volume * 0.5, prevLong + 2);
+        // Petite base : sortie longue +15 % par semaine maximum (≥ 0,5 km), au lieu de +2 km.
+        const longStep = lowBase ? Math.max(0.5, prevLong * 0.15) : 2;
+        longKm = Math.min(longCap, Math.max(volume * longFrac, ramp), volume * 0.5, prevLong + longStep);
         if (recovery) longKm *= 0.75; else prevLong = Math.max(prevLong, longKm);
       }
-      longKm = round05(Math.max(longKm, level === 'beginner' ? 5 : 6));
+      longKm = round05(Math.max(longKm, lowBase ? Math.max(3, profile.longestRunKm) : level === 'beginner' ? 5 : 6));
       let longOpts = {};
       if (phase === 'specific' && !recovery && idxInPhase % 2 === 1) {
         if (profile.raceDistance === 42195) longOpts = { finishZone: 'M', finishKm: Math.round(6 + p * 8) };
