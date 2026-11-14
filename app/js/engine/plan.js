@@ -6,7 +6,7 @@
 //  - ~80 % du volume en endurance fondamentale, 1 à 2 séances de qualité par semaine selon le niveau.
 //  - Allures calculées par le modèle VDOT à partir d'une performance récente.
 
-import { vdotFromPerformance, predictTime, racePace, trainingPaces } from './vdot.js';
+import { vdotFromPerformance, vdotFromEasyPace, predictTime, racePace, trainingPaces } from './vdot.js';
 import { addDays, mondayOf, weekday, daysBetween } from './dates.js';
 import * as W from './workouts.js';
 
@@ -67,7 +67,8 @@ function regularPhases(n) {
   return [...Array(base).fill('base'), ...Array(Math.max(0, n - 1 - base)).fill('build'), 'taper'];
 }
 
-const DEFAULT_VDOT = { beginner: 30, intermediate: 38, advanced: 46 };
+// Valeurs prudentes quand on ne sait rien : mieux vaut un footing trop lent que trop rapide.
+const DEFAULT_VDOT = { beginner: 26, intermediate: 32, advanced: 40 };
 // Gain de VDOT réaliste par semaine d'entraînement, et plafond sur un cycle.
 const GAIN_RATE = { beginner: 0.25, intermediate: 0.15, advanced: 0.08 };
 const GAIN_CAP = { beginner: 8, intermediate: 5, advanced: 3 };
@@ -189,6 +190,9 @@ export function generatePlan(profile, opts) {
   if (vdotStart == null) {
     if (profile.recent?.distanceM && profile.recent?.timeSec) {
       vdotStart = vdotFromPerformance(profile.recent.distanceM, profile.recent.timeSec);
+    } else if (profile.easyPaceSec) {
+      vdotStart = vdotFromEasyPace(profile.easyPaceSec);
+      warnings.push('Allures calculées à partir de ton allure de footing. Un chrono (test 5 km) les rendra plus précises.');
     } else {
       vdotStart = DEFAULT_VDOT[level];
       warnings.push(fitness
