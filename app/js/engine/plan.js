@@ -236,6 +236,18 @@ export function generatePlan(profile, opts) {
   const minEasy = level === 'beginner' ? 3 : 5;
   const weekOffset = opts.weekOffset ?? 0;
 
+  // Test 6 min : en fin de Fondation (remise en forme), ou en semaine 2 d'une prépa course sans chrono.
+  let testWeek = -1;
+  if (!profile.vmaTestDone) {
+    if (fitness) {
+      let last = phases.lastIndexOf('base');
+      if (last >= 0 && last % 4 === 3) last -= 1; // pas en semaine allégée
+      if (last >= 2 && last < nWeeks - 1) testWeek = last;
+    } else if (!profile.recent && nWeeks > 5) {
+      testWeek = 1;
+    }
+  }
+
   let load = startVolume;
   const longCap = race.longCap[level];
   const longStart = Math.min(longCap, profile.longestRunKm || startVolume * longFrac);
@@ -321,6 +333,15 @@ export function generatePlan(profile, opts) {
       let pQ = recovery ? Math.max(0, p - 0.3) : phase === 'taper' ? 0.3 : p;
       if (level === 'beginner') pQ *= 0.5; // séances plus courtes pour un débutant
       const quality = qTypes.map((t) => buildQuality(t, c, pQ));
+      // Semaine de test : le test remplace la séance de qualité (ou, à défaut, un footing placé loin du sport).
+      let testOnEasy = null;
+      if (i === testWeek) {
+        if (quality.length) quality[0] = W.vmaTest(c);
+        else {
+          const safe = slots.easy.filter((d) => !sportDays.includes(d) && !sportDays.some((sd) => (d - sd + 7) % 7 === 1));
+          testOnEasy = safe[0] ?? slots.easy[0] ?? null;
+        }
+      }
       const qualityKm = quality.reduce((s, q) => s + W.estimate(q.steps, c.paces).km, 0);
 
       const nEasy = slots.easy.length;
@@ -330,9 +351,9 @@ export function generatePlan(profile, opts) {
       push(slots.long, long);
       slots.quality.forEach((d, k) => push(d, quality[k]));
       // Les lignes droites ajoutent ~1 km : on raccourcit d'autant le footing concerné.
-      slots.easy.forEach((d) => push(d, d === stridesOn
-        ? W.easyRun(c, Math.max(minEasy - 1, easyKm - 1), { strides: true })
-        : W.easyRun(c, easyKm)));
+      slots.easy.forEach((d) => push(d, d === testOnEasy ? W.vmaTest(c)
+        : d === stridesOn ? W.easyRun(c, Math.max(minEasy - 1, easyKm - 1), { strides: true })
+          : W.easyRun(c, easyKm)));
     }
 
     sessions.sort((a, b) => a.date.localeCompare(b.date));

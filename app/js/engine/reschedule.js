@@ -4,7 +4,7 @@
 import { addDays, weekday } from './dates.js';
 import { easyRun, estimate } from './workouts.js';
 
-export const HARD_TYPES = ['threshold', 'intervals', 'hills', 'fartlek', 'race-pace'];
+export const HARD_TYPES = ['threshold', 'intervals', 'hills', 'fartlek', 'race-pace', 'test'];
 const isHard = (s) => HARD_TYPES.includes(s.type);
 
 function locate(plan, id) {

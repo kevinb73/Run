@@ -195,6 +195,7 @@ a { color: inherit; }
 .type-intervals, .type-hills, .type-fartlek { --tc: var(--z-i); }
 .type-race-pace { --tc: var(--z-race); }
 .type-race { --tc: var(--accent); }
+.type-test { --tc: var(--z-r); }
 
 .badge { font-size: 0.72rem; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); white-space: nowrap; }
 .badge.done { background: var(--ok); color: #fff; }

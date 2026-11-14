@@ -46,8 +46,19 @@ export function adaptPlan(plan, log, today, newRace = null, hr = null) {
   const reasons = [];
 
   if (newRace) {
-    const v = vdotFromPerformance(newRace.distanceM, newRace.timeSec);
-    reasons.push(`Nouveau chrono de référence : niveau recalculé (${vdot.toFixed(1)} → ${v.toFixed(1)}).`);
+    let v = vdotFromPerformance(newRace.distanceM, newRace.timeSec);
+    const shortTest = newRace.timeSec <= 600;
+    if (shortTest) {
+      const vma = newRace.distanceM / (newRace.timeSec / 60) * 0.06; // km/h
+      reasons.push(`Test : VMA estimée à ${vma.toFixed(1).replace('.', ',')} km/h.`);
+    }
+    // Un test court mesure la VMA, pas l'endurance : on limite la hausse pour ne pas surestimer les footings et le seuil.
+    if (shortTest && v - vdot > 3) {
+      reasons.push(`Ton test est bien au-dessus de ton niveau d'endurance actuel : hausse limitée à +3 pour l'instant (${vdot.toFixed(1)} → ${(vdot + 3).toFixed(1)} au lieu de ${v.toFixed(1)}). Le bilan du lundi (cœur + allure) affinera.`);
+      v = vdot + 3;
+    } else {
+      reasons.push(`Nouveau chrono de référence : niveau recalculé (${vdot.toFixed(1)} → ${v.toFixed(1)}).`);
+    }
     vdot = v;
   } else if (stats.done >= 3 && stats.hardShare >= 0.5) {
     vdot -= 0.7;
@@ -85,7 +96,8 @@ export function adaptPlan(plan, log, today, newRace = null, hr = null) {
   }
   const keep = plan.weeks.filter((w) => w.start < startDate);
   const profile = { ...plan.profile, weeklyKm: Math.round(weeklyKm), longestRunKm: Math.max(...keep.flatMap((w) => w.sessions).filter((s) => s.type === 'long').map((s) => s.km), 0) || plan.profile.longestRunKm };
-  if (newRace) profile.recent = newRace;
+  // Un chrono ou un test récent vaut calibrage : pas de nouveau test dans les semaines recalculées.
+  if (newRace) Object.assign(profile, { recent: newRace, vmaTestDone: true });
 
   const fresh = generatePlan(profile, { today, startDate, vdotStart: vdot, weekOffset: keep.length ? keep.at(-1).index + 1 : 0 });
   const adjustment = { date: today, reasons, vdotBefore: cur.vdot, vdotAfter: Math.round(vdot * 10) / 10, changed: Math.abs(vdot - cur.vdot) >= 0.05 || Math.round(weeklyKm) !== Math.round(cur.volumeKm) };

@@ -271,7 +271,7 @@ function renderToday() {
   }));
   view.querySelector('#push-week')?.addEventListener('click', () => pushWeek());
   view.querySelector('#sync-now')?.addEventListener('click', () => syncActivities(true));
-  syncActivities(false).then(() => { weeklyCoach(); return pushWeek({ silent: true }); });
+  syncActivities(false).then(() => { weeklyCoach(); detectTestResults(); return pushWeek({ silent: true }); });
 }
 
 // ---------------- Garmin ----------------
@@ -640,6 +640,7 @@ function renderSession(id) {
     state.log[id] = { done: true, feel, actualKm: s.optional ? undefined : Number(form.km.value) || s.km, note: form.note.value.trim() || undefined, at: t };
     persist();
     if (s.type === 'race') askRaceResult(s);
+    else if (s.type === 'test') askTestResult(s);
     else { toast('Séance enregistrée 💪'); history.back(); }
   });
   view.querySelector('[data-move]')?.addEventListener('click', () => moveToToday(id));
@@ -662,6 +663,44 @@ function renderSession(id) {
     persist();
     renderSession(id);
   });
+}
+
+/** Résultat du test 6 min : distance en mètres → VMA (km/h = m / 100) → recalibrage. */
+function askTestResult(s, prefill = null) {
+  showSheet(`<h2>Résultat du test</h2>
+    <p class="muted">${prefill ? 'Distance lue sur ta montre (tour de 6 minutes). Corrige-la si besoin.' : 'Distance parcourue pendant les 6 minutes (affichée sur ta montre).'}</p>
+    <form id="tf"><label class="field">Distance en mètres<input type="number" inputmode="numeric" name="m" min="500" max="2600" value="${prefill ?? ''}" placeholder="ex. 1250" required></label>
+    <p class="error"></p><button class="btn primary" type="submit">Recalibrer mes allures</button>
+    <button class="btn" type="button" data-close>Plus tard</button></form>`, (sheet) => {
+    sheet.querySelector('#tf').addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      const m = Number(ev.currentTarget.m.value);
+      if (!(m >= 500 && m <= 2600)) { sheet.querySelector('.error').textContent = 'Entre 500 et 2 600 m : vérifie la saisie.'; return; }
+      state.log[s.id] = { ...state.log[s.id], testDistanceM: m };
+      persist();
+      closeSheet();
+      toast(`VMA estimée : ${(m / 100).toFixed(1).replace('.', ',')} km/h`);
+      doAdapt({ distanceM: m, timeSec: 360 });
+    });
+  });
+}
+
+/** Test fait avec la montre : on lit le tour de 6 minutes dans l'activité Garmin. */
+async function detectTestResults() {
+  if (!garminOn()) return;
+  const todo = allSessions().filter((s) => s.type === 'test' && state.log[s.id]?.source === 'garmin' && state.log[s.id]?.garminId && !state.log[s.id].testDistanceM && !state.log[s.id].testAsked);
+  for (const s of todo) {
+    state.log[s.id].testAsked = true;
+    persist();
+    let best = null;
+    try {
+      const { laps } = await api(state.garmin, 'GET', `/activities/${state.log[s.id].garminId}/laps`);
+      best = laps.filter((l) => l.durationSec >= 330 && l.durationSec <= 390).sort((a, b) => b.distanceM - a.distanceM)[0];
+    } catch { /* on demandera la distance à la main */ }
+    const m = best ? Math.round(best.distanceM * 360 / best.durationSec) : null;
+    askTestResult(s, m);
+    return; // une feuille à la fois
+  }
 }
 
 function askRaceResult(s) {
@@ -710,7 +749,7 @@ function renderProfile() {
         <button class="btn" id="redo">Refaire le questionnaire</button>
       </div>
     </section>
-    <p class="muted center small">Run Coach · v0.9</p>`;
+    <p class="muted center small">Run Coach · v0.10</p>`;
 
   bindGarminProfile();
   view.querySelector('#g-restore')?.addEventListener('click', () => {

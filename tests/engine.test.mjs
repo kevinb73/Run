@@ -227,3 +227,32 @@ test('coach : cœur trop haut sur les footings → allures ralenties ; cœur bas
   assert.ok(adjustment.vdotAfter < adjustment.vdotBefore);
   assert.ok(next.weeks.at(-1).paces.E[0] > plan.weeks.at(-1).paces.E[0], 'footings plus lents en fin de plan');
 });
+
+test('test 6 min : fin de Fondation en remise en forme, semaine 2 en prépa sans chrono, absent sinon', () => {
+  const tests = (plan) => plan.weeks.flatMap((w) => w.sessions.filter((s) => s.type === 'test').map(() => w));
+  const reg = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, days: [1, 3, 6], longRunDay: 6, otherSports: [{ day: 2, kind: 'futsal' }, { day: 6, kind: 'futsal' }] }, { today: TODAY });
+  const t1 = tests(reg);
+  assert.equal(t1.length, 1);
+  assert.equal(t1[0].phase, 'base');
+  assert.equal(reg.weeks[t1[0].index + 1].phase, 'build', 'juste avant le Développement');
+  const testSession = reg.weeks[t1[0].index].sessions.find((s) => s.type === 'test');
+  const wd = (new Date(testSession.date).getUTCDay() + 6) % 7;
+  assert.ok(![2, 3, 6, 0].includes(wd), 'ni un jour de futsal ni le lendemain');
+  const raceNoChrono = generatePlan({ ...base, recent: null }, { today: TODAY });
+  assert.equal(tests(raceNoChrono)[0]?.index, 1);
+  assert.equal(tests(generatePlan(base, { today: TODAY })).length, 0, 'chrono connu : pas de test en début de prépa');
+  // Après le test : recalibrage, et plus de nouveau test dans les semaines recalculées
+  const { plan: next } = adaptPlan(reg, {}, testSession.date, { distanceM: 1250, timeSec: 360 });
+  assert.equal(next.profile.vmaTestDone, true);
+  assert.equal(next.weeks.filter((w) => w.start > testSession.date).flatMap((w) => w.sessions).filter((s) => s.type === 'test').length, 0);
+});
+
+test('test court très au-dessus du niveau : hausse plafonnée à +3', () => {
+  const reg = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, easyPaceSec: 510 }, { today: TODAY });
+  const { adjustment } = adaptPlan(reg, {}, '2026-12-29', { distanceM: 1250, timeSec: 360 });
+  assert.ok(Math.abs(adjustment.vdotAfter - adjustment.vdotBefore - 3) < 0.15);
+  assert.ok(adjustment.reasons.some((r) => r.includes('12,5 km/h')));
+  // Un chrono long (10 km) n'est pas plafonné
+  const { adjustment: a2 } = adaptPlan(reg, {}, '2026-12-29', { distanceM: 10000, timeSec: 52 * 60 });
+  assert.ok(a2.vdotAfter - a2.vdotBefore > 3);
+});

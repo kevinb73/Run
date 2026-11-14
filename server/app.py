@@ -260,6 +260,21 @@ def activities(start: str | None = None, end: str | None = None) -> dict[str, An
     return {"activities": sorted(acts, key=lambda x: x["start"] or "")}
 
 
+@app.get("/activities/{activity_id}/laps", dependencies=[Depends(require_key)])
+def laps(activity_id: int) -> dict[str, Any]:
+    """Tours d'une activité (une séance structurée crée un tour par étape) : sert à isoler un test."""
+    g = garmin()
+    raw = garmin_call(g.get_activity_splits, str(activity_id)) or {}
+    out = []
+    for lap in raw.get("lapDTOs") or []:
+        out.append({
+            "distanceM": round(lap.get("distance") or 0),
+            "durationSec": round(lap.get("duration") or lap.get("elapsedDuration") or 0),
+            "avgHr": lap.get("averageHR"),
+        })
+    return {"laps": out}
+
+
 @app.get("/garmin/profile", dependencies=[Depends(require_key)])
 def hr_profile() -> dict[str, Any]:
     """FC max, FC repos et seuil tels que réglés dans Garmin (zones de course à pied de préférence)."""

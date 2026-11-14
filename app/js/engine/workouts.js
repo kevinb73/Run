@@ -171,3 +171,15 @@ export function runWalk(c, runSec, walkSec, reps, final = false) {
       walkStep(300, 'warmup', 'Marche dynamique'), main, walkStep(300, 'cooldown', 'Marche tranquille'),
     ]);
 }
+
+/** Test 6 minutes (demi-Cooper) : la distance parcourue donne la VMA (km/h = mètres / 100). */
+export function vmaTest(c) {
+  return session('test', 'Test 6 min (VMA)',
+    "Après l'échauffement, cours 6 minutes le plus loin possible, à un rythme que tu peux tenir jusqu'au bout (pars un peu prudemment, accélère sur la dernière minute). La distance recalibre toutes tes allures.", [
+      step('warmup', time(900), 'E', c.paces.E, 'Footing très facile'),
+      repeat(3, [step('run', time(20), 'R', null, 'Accélération progressive'), step('recovery', time(60), null, null, 'Trot')]),
+      step('recovery', time(120), null, null, 'Marche / trot, prépare-toi'),
+      step('run', time(360), 'I', null, 'TEST : 6 min le plus loin possible'),
+      step('cooldown', time(600), 'E', c.paces.E, 'Retour au calme, très lent'),
+    ]);
+}

@@ -114,6 +114,14 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(acts[0]["paceSecPerKm"], 510)
         self.assertIsNone(acts[1]["paceSecPerKm"])
 
+    def test_laps(self):
+        self.fake.get_activity_splits = lambda aid: {"lapDTOs": [
+            {"distance": 2500.4, "duration": 900.2, "averageHR": 130},
+            {"distance": 1318.6, "duration": 360.0, "averageHR": 178},
+        ]}
+        laps = self.c.get("/activities/42/laps", headers=self.h).json()["laps"]
+        self.assertEqual(laps[1], {"distanceM": 1319, "durationSec": 360, "avgHr": 178})
+
     def test_hr_profile(self):
         self.fake.get_heart_rate_zones_v2 = lambda: [
             {"sport": "DEFAULT", "maxHeartRateUsed": 190, "restingHeartRateUsed": 60},
