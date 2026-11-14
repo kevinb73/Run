@@ -1,9 +1,9 @@
 // Cache "réseau d'abord" : l'app fonctionne hors ligne, et récupère les mises à jour dès qu'il y a du réseau.
-const CACHE = 'run-coach-v6';
+const CACHE = 'run-coach-v7';
 const ASSETS = [
   './', './index.html', './css/style.css', './manifest.webmanifest', './icons/icon.svg', './icons/apple-touch-icon.png',
   './js/app.js', './js/store.js', './js/format.js', './js/onboarding.js',
-  './js/engine/vdot.js', './js/engine/plan.js', './js/engine/workouts.js', './js/engine/dates.js', './js/engine/adapt.js', './js/engine/reschedule.js',
+  './js/engine/vdot.js', './js/engine/plan.js', './js/engine/workouts.js', './js/engine/dates.js', './js/engine/adapt.js', './js/engine/reschedule.js', './js/engine/garminsync.js', './js/garmin.js',
 ];
 
 self.addEventListener('install', (e) => {

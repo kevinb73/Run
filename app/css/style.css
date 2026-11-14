@@ -279,3 +279,11 @@ a { color: inherit; }
   background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-weight: 600;
   max-width: calc(100% - 32px); z-index: 20; box-shadow: 0 4px 20px rgb(0 0 0 / 0.2);
 }
+
+/* ----- Garmin ----- */
+.feel-row { padding: 8px 0; border-bottom: 1px solid var(--border); }
+.feel-row:last-child { border-bottom: none; }
+.feel-row .choices { margin: 8px 0 0; grid-template-columns: repeat(3, 1fr); }
+.small-btn { min-height: 40px; padding: 0 10px; font-size: 0.9rem; }
+.card .btn + .btn { margin-top: 8px; }
+.card > .btn { width: 100%; margin-top: 8px; }

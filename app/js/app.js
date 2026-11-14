@@ -2,12 +2,30 @@ import * as store from './store.js';
 import { generatePlan, PHASES, FITNESS_GOALS, SPORTS } from './engine/plan.js';
 import { adaptPlan, recentStats, currentWeek } from './engine/adapt.js';
 import { canMoveToToday, moveSession, downgradeToEasy } from './engine/reschedule.js';
+import { applyActivities } from './engine/garminsync.js';
+import { api, sessionPayload } from './garmin.js';
 import { vdotFromPerformance, predictTime } from './engine/vdot.js';
-import { todayISO, daysBetween } from './engine/dates.js';
+import { todayISO, daysBetween, addDays } from './engine/dates.js';
 import { visibleSteps, defaultDraft } from './onboarding.js';
 import { esc, pace, paceRange, duration, dateLong, dateShort, dateFull, ZONES, TYPE_ICON, stepDuration, KIND_LABEL } from './format.js';
 
-let state = store.load();
+let state = normalize(store.load());
+
+/** Champs ajoutés au fil des versions (Garmin) : valeurs par défaut. */
+function normalize(st) {
+  return { garmin: null, pushed: {}, known: {}, freeRuns: [], lastSync: 0, ...st };
+}
+
+/** Nouveau plan : on garde la connexion Garmin, on retire de la montre les séances de l'ancien plan. */
+function resetPlan(plan) {
+  const old = state;
+  state = normalize({ garmin: old.garmin, plan, log: {} });
+  if (old.garmin?.connected) {
+    for (const [id, info] of Object.entries(old.pushed ?? {})) {
+      if (info.date >= today()) api(old.garmin, 'DELETE', `/workouts/${encodeURIComponent(id)}`).catch(() => {});
+    }
+  }
+}
 let draft = state.plan ? { ...defaultDraft(), ...state.plan.profile } : defaultDraft();
 let stepIdx = 0;
 
@@ -80,7 +98,7 @@ function renderOnboarding() {
     if (!last) { stepIdx++; renderOnboarding(); return; }
     try {
       const profile = cleanProfile(draft);
-      state = { plan: generatePlan(profile, { today: today() }), log: {} };
+      resetPlan(generatePlan(profile, { today: today() }));
       persist();
       stepIdx = 0;
       location.hash = '#/';
@@ -120,7 +138,7 @@ function newCycle() {
     prof.weeklyKm = Math.round(done.reduce((a, s) => a + (state.log[s.id].actualKm ?? s.km), 0) / Math.max(1, last.length)) || prof.weeklyKm;
     if (prof.fitnessGoal === 'regular' && done.length >= last.flatMap((w) => w.sessions).length * 0.8) prof.fitnessGoal = 'progress';
   }
-  state = { plan: generatePlan(prof, { today: today() }), log: {} };
+  resetPlan(generatePlan(prof, { today: today() }));
   persist();
   showSheet(`<h2>Nouveau cycle prêt</h2><p>${esc(FITNESS_GOALS[prof.fitnessGoal].label)} · ${prof.durationWeeks} semaines${test ? ', allures recalibrées avec ton test 5 km' : ''}.</p><button class="btn primary" data-close>C'est parti</button>`);
   route();
@@ -156,11 +174,13 @@ function renderToday() {
   if (week) {
     const runs = week.sessions.filter((s) => !s.optional);
     const done = runs.filter((s) => state.log[s.id]?.done);
-    const doneKm = done.reduce((a, s) => a + (state.log[s.id].actualKm ?? s.km), 0);
+    const weekEnd = addDays(week.start, 7);
+    const free = state.freeRuns.filter((a) => a.date >= week.start && a.date < weekEnd);
+    const doneKm = done.reduce((a, s) => a + (state.log[s.id].actualKm ?? s.km), 0) + free.reduce((a, r) => a + r.distanceKm, 0);
     weekBlock = `<section class="card">
       <div class="row between"><h2>Semaine ${week.index + 1}</h2><span class="phase phase-${week.phase}">${PHASES[week.phase].label}${week.recovery ? ' · allégée' : ''}</span></div>
       <div class="meter"><div style="width:${Math.min(100, (doneKm / week.volumeKm) * 100)}%"></div></div>
-      <p class="muted">${doneKm.toFixed(1)} / ${week.volumeKm} km · ${done.length} / ${runs.length} courses</p>
+      <p class="muted">${doneKm.toFixed(1)} / ${week.volumeKm} km · ${done.length} / ${runs.length} courses${free.length ? ` · ${free.length} course(s) libre(s)` : ''}</p>
       <div class="week-dots">${week.sessions.map((s) => `<a href="#/session/${s.id}" class="dot ${state.log[s.id]?.done ? 'done' : s.date < t ? 'missed' : ''} ${s.date === t ? 'today' : ''}" title="${esc(s.title)}">${iconOf(s)}</a>`).join('')}</div>
     </section>`;
   }
@@ -183,6 +203,8 @@ function renderToday() {
     ${next ? `<h2 class="section-title">${next.date === t ? 'Aujourd\'hui' : 'Prochaine séance'}</h2>${sessionCard(next, { big: true })}
       ${canMoveToToday(next, state.log, t) ? `<button class="btn ghost move-today" data-move="${next.id}">↻ Faire cette séance aujourd'hui</button>` : ''}` : finished}
     ${missed.length ? `<section class="card warn"><p><strong>${missed.length} séance(s) passée(s) sans retour.</strong> Indique si tu les as faites : c'est ce qui permet d'adapter le plan.</p>${missed.map((s) => sessionCard(s)).join('')}</section>` : ''}
+    ${feelPrompt(t)}
+    ${garminTodayBlock(t)}
     ${weekBlock}
     ${stats.done >= 3 && p.profile.fitnessGoal !== 'restart' ? `<section class="card"><h2>Coach</h2><p class="muted">Sur 14 jours : ${Math.round((stats.completion ?? 0) * 100)} % des séances faites, ${Math.round(stats.hardShare * 100)} % ressenties dures.</p>
       <button class="btn" id="adapt">Réajuster le plan</button></section>` : ''}
@@ -190,6 +212,182 @@ function renderToday() {
   view.querySelector('#adapt')?.addEventListener('click', () => doAdapt());
   view.querySelector('#new-cycle')?.addEventListener('click', newCycle);
   view.querySelector('[data-move]')?.addEventListener('click', (ev) => moveToToday(ev.currentTarget.dataset.move));
+  view.querySelectorAll('[data-feel]').forEach((b) => b.addEventListener('click', () => {
+    const [id, feel] = b.dataset.feel.split(':');
+    state.log[id] = { ...state.log[id], feel };
+    persist();
+    renderToday();
+  }));
+  view.querySelector('#push-week')?.addEventListener('click', pushWeek);
+  view.querySelector('#sync-now')?.addEventListener('click', () => syncActivities(true));
+  syncActivities(false);
+}
+
+// ---------------- Garmin ----------------
+
+const garminOn = () => !!state.garmin?.connected;
+
+/** Séances importées de Garmin sans ressenti : on le demande (c'est ce qui sert à adapter le plan). */
+function feelPrompt(t) {
+  const todo = allSessions().filter((s) => state.log[s.id]?.source === 'garmin' && !state.log[s.id].feel && s.date >= addDays(t, -7));
+  if (!todo.length) return '';
+  return `<section class="card"><h2>Comment c'était ?</h2>${todo.map((s) => {
+    const e = state.log[s.id];
+    return `<div class="feel-row"><p><strong>${esc(s.title)}</strong> <span class="muted">· ${esc(dateShort(s.date))} · ${e.actualKm} km${e.paceSecPerKm ? ` à ${pace(e.paceSecPerKm)}/km` : ''}${e.avgHr ? ` · ${e.avgHr} bpm` : ''}</span></p>
+      <div class="choices">${[['easy', 'Facile'], ['ok', 'Correct'], ['hard', 'Dur']].map(([f, l]) => `<button class="btn small-btn" data-feel="${s.id}:${f}">${l}</button>`).join('')}</div></div>`;
+  }).join('')}</section>`;
+}
+
+function garminTodayBlock(t) {
+  if (!garminOn()) return '';
+  const soon = allSessions().filter((s) => !s.optional && s.date >= t && s.date <= addDays(t, 6) && !state.log[s.id]?.done);
+  const missing = soon.filter((s) => state.pushed[s.id]?.date !== s.date).length;
+  const last = state.lastSync ? new Date(state.lastSync).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—';
+  return `<section class="card"><div class="row between"><h2>⌚ Garmin</h2><span class="muted small">Synchro ${last}</span></div>
+    ${missing ? `<p class="muted">${missing} séance(s) des 7 prochains jours pas encore sur ta montre.</p><button class="btn primary" id="push-week">Envoyer sur ma montre</button>`
+      : soon.length ? '<p class="muted">Les séances des 7 prochains jours sont sur ta montre ✓</p>' : ''}
+    <button class="btn ghost" id="sync-now">Récupérer mes courses</button>
+    ${state.syncNotices?.length ? `<ul class="adj">${state.syncNotices.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}</section>`;
+}
+
+async function pushSession(s) {
+  const res = await api(state.garmin, 'POST', '/workouts', sessionPayload(s));
+  state.pushed[s.id] = { date: s.date, workoutId: res.workoutId };
+  persist();
+}
+
+/** Renvoie les séances déjà présentes sur la montre si leur date ou leur contenu a changé. */
+async function repushIfNeeded(ids) {
+  if (!garminOn()) return;
+  for (const id of ids) {
+    const s = findSession(id);
+    if (s && state.pushed[id]) {
+      try { await pushSession(s); } catch (ex) { toast(`Montre non mise à jour : ${ex.message}`); }
+    }
+  }
+}
+
+async function pushWeek() {
+  const t = today();
+  const btn = view.querySelector('#push-week');
+  if (btn) { btn.disabled = true; btn.textContent = 'Envoi en cours…'; }
+  const soon = allSessions().filter((s) => !s.optional && s.date >= t && s.date <= addDays(t, 6) && !state.log[s.id]?.done && state.pushed[s.id]?.date !== s.date);
+  let ok = 0;
+  for (const s of soon) {
+    try { await pushSession(s); ok++; } catch (ex) { toast(ex.message); break; }
+  }
+  if (ok) toast(`${ok} séance(s) envoyée(s) : synchronise ta montre avec Garmin Connect.`);
+  route();
+}
+
+let syncing = false;
+async function syncActivities(force) {
+  if (!garminOn() || syncing) return;
+  if (!force && Date.now() - state.lastSync < 10 * 60 * 1000) return;
+  syncing = true;
+  try {
+    const start = addDays(today(), -21) > state.plan.weeks[0].start ? addDays(today(), -21) : addDays(state.plan.weeks[0].start, -7);
+    const { activities } = await api(state.garmin, 'GET', `/activities?start=${start}&end=${today()}`);
+    const r = applyActivities(state.plan, state.log, activities, state.known);
+    Object.assign(state, { plan: r.plan, log: r.log, known: r.known, lastSync: Date.now() });
+    state.freeRuns = [...state.freeRuns, ...r.freeRuns];
+    if (r.notices.length) state.syncNotices = r.notices.slice(-5);
+    persist();
+    if (force) toast(r.notices.length ? `${r.notices.length} course(s) importée(s).` : 'Aucune nouvelle course.');
+    if (r.notices.length || force) route();
+  } catch (ex) {
+    if (force) toast(ex.message);
+    if (/expirée|non connecté/.test(ex.message)) { state.garmin.connected = false; persist(); }
+  } finally {
+    syncing = false;
+  }
+}
+
+function garminSessionCard(s) {
+  const t = today();
+  if (!garminOn()) return `<section class="card"><h2>⌚ Garmin</h2><p class="muted">Connecte ta montre dans l'onglet Profil pour envoyer cette séance.</p></section>`;
+  if (state.log[s.id]?.source === 'garmin') {
+    const e = state.log[s.id];
+    return `<section class="card"><h2>⌚ Données Garmin</h2><p>${e.actualKm} km · ${duration(e.durationSec)}${e.paceSecPerKm ? ` · ${pace(e.paceSecPerKm)}/km` : ''}${e.avgHr ? ` · ${e.avgHr} bpm` : ''}</p></section>`;
+  }
+  if (s.date < t) return '';
+  const p = state.pushed[s.id];
+  const synced = p?.date === s.date;
+  return `<section class="card"><h2>⌚ Garmin</h2>
+    <p class="muted">${synced ? `Sur ta montre le ${esc(dateShort(s.date))} ✓` : 'Pas encore sur ta montre.'}</p>
+    <button class="btn ${synced ? '' : 'primary'}" id="push-one">${synced ? 'Renvoyer' : 'Envoyer vers ma montre'}</button></section>`;
+}
+
+function garminProfileCard() {
+  const g = state.garmin;
+  if (!g?.url) {
+    return `<section class="card"><h2>⌚ Montre Garmin</h2>
+      <p class="muted">Colle l'adresse et la clé de ton serveur de synchronisation.</p>
+      <form id="g-server"><label class="field">Adresse du serveur<input type="url" name="url" placeholder="https://…" required></label>
+      <label class="field">Clé d'accès<input type="password" name="key" required autocomplete="off"></label>
+      <p class="error"></p><button class="btn primary" type="submit">Enregistrer</button></form></section>`;
+  }
+  if (!g.connected) {
+    return `<section class="card"><h2>⌚ Montre Garmin</h2>
+      <p class="muted">Serveur OK. Connecte ton compte Garmin Connect (une seule fois : ton mot de passe n'est pas conservé, seul un jeton de connexion l'est).</p>
+      <form id="g-login"><label class="field">E-mail Garmin<input type="email" name="email" required autocomplete="username"></label>
+      <label class="field">Mot de passe Garmin<input type="password" name="password" required autocomplete="current-password"></label>
+      <p class="error"></p><button class="btn primary" type="submit">Connecter mon compte</button></form>
+      <form id="g-mfa" hidden><label class="field">Code reçu (e-mail ou SMS)<input type="text" name="code" inputmode="numeric" autocomplete="one-time-code"></label>
+      <p class="error"></p><button class="btn primary" type="submit">Valider le code</button></form>
+      <button class="btn ghost" id="g-forget">Changer de serveur</button></section>`;
+  }
+  return `<section class="card"><h2>⌚ Montre Garmin</h2><p>Connecté${g.name ? ` : <strong>${esc(g.name)}</strong>` : ''} ✓</p>
+    <p class="muted small">Les séances envoyées apparaissent dans le calendrier Garmin Connect puis sur ta montre à la prochaine synchronisation.</p>
+    <button class="btn ghost" id="g-forget">Déconnecter</button></section>`;
+}
+
+function bindGarminProfile() {
+  const err = (form, msg) => { form.querySelector('.error').textContent = msg; };
+  view.querySelector('#g-server')?.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const f = ev.currentTarget;
+    const cfg = { url: f.url.value.trim().replace(/\/$/, ''), key: f.key.value.trim() };
+    try {
+      const st = await api(cfg, 'GET', '/garmin/status');
+      state.garmin = { ...cfg, connected: st.connected, name: st.name };
+      persist();
+      renderProfile();
+    } catch (ex) { err(f, ex.message); }
+  });
+  view.querySelector('#g-login')?.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const f = ev.currentTarget;
+    const btn = f.querySelector('button');
+    btn.disabled = true; btn.textContent = 'Connexion…';
+    try {
+      const r = await api(state.garmin, 'POST', '/garmin/login', { email: f.email.value.trim(), password: f.password.value });
+      f.password.value = '';
+      if (r.mfa) { f.hidden = true; view.querySelector('#g-mfa').hidden = false; return; }
+      state.garmin = { ...state.garmin, connected: true, name: r.name };
+      persist();
+      toast('Compte Garmin connecté ⌚');
+      renderProfile();
+    } catch (ex) { err(f, ex.message); } finally { btn.disabled = false; btn.textContent = 'Connecter mon compte'; }
+  });
+  view.querySelector('#g-mfa')?.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const f = ev.currentTarget;
+    try {
+      const r = await api(state.garmin, 'POST', '/garmin/mfa', { code: f.code.value });
+      state.garmin = { ...state.garmin, connected: true, name: r.name };
+      persist();
+      toast('Compte Garmin connecté ⌚');
+      renderProfile();
+    } catch (ex) { err(f, ex.message); }
+  });
+  view.querySelector('#g-forget')?.addEventListener('click', async () => {
+    if (!confirm('Déconnecter Garmin de l\'app ?')) return;
+    if (state.garmin?.connected) await api(state.garmin, 'POST', '/garmin/logout').catch(() => {});
+    state.garmin = state.garmin?.connected ? { ...state.garmin, connected: false } : null;
+    persist();
+    renderProfile();
+  });
 }
 
 /** Avance une séance à aujourd'hui, en vérifiant les règles de sécurité. */
@@ -211,6 +409,7 @@ function moveToToday(id) {
       sheet.querySelector('#dg').addEventListener('click', () => {
         state.plan = downgradeToEasy(state.plan, conflict);
         persist();
+        repushIfNeeded([conflict]);
         closeSheet();
         toast('Séance de demain transformée en footing.');
         route();
@@ -219,6 +418,7 @@ function moveToToday(id) {
   } else {
     showSheet(`<h2>Séance déplacée</h2>${msgs.map((m) => `<p>${m}</p>`).join('')}<button class="btn primary" data-close>OK</button>`);
   }
+  repushIfNeeded([id, swappedWith].filter(Boolean));
   if (location.hash === `#/session/${id}`) route(); else location.hash = `#/session/${id}`;
 }
 
@@ -297,11 +497,7 @@ function renderSession(id) {
     ${canMoveToToday(s, state.log, t) ? `<button class="btn move-today" data-move="${s.id}">↻ Faire cette séance aujourd'hui</button>` : ''}
     ${s.movedFrom && s.movedFrom !== s.date ? `<p class="muted small">Déplacée (prévue initialement le ${esc(dateShort(s.movedFrom))}).</p>` : ''}
     ${s.downgraded ? '<p class="muted small">Transformée en footing pour éviter deux séances dures d\'affilée.</p>' : ''}
-    ${s.optional ? '' : `<section class="card">
-      <h2>Garmin</h2>
-      <p class="muted">L'envoi direct vers la montre arrive à l'étape 2 (serveur de synchronisation).</p>
-      <button class="btn" disabled>Envoyer vers ma montre</button>
-    </section>`}
+    ${s.optional ? '' : garminSessionCard(s)}
     ${s.date <= t ? `<section class="card">
       <h2>Ton retour</h2>
       <form id="log-form">
@@ -330,6 +526,12 @@ function renderSession(id) {
     else { toast('Séance enregistrée 💪'); history.back(); }
   });
   view.querySelector('[data-move]')?.addEventListener('click', () => moveToToday(id));
+  view.querySelector('#push-one')?.addEventListener('click', async (ev) => {
+    ev.currentTarget.disabled = true;
+    ev.currentTarget.textContent = 'Envoi…';
+    try { await pushSession(s); toast('Séance envoyée : synchronise ta montre.'); } catch (ex) { toast(ex.message); }
+    renderSession(id);
+  });
   view.querySelector('#replaced')?.addEventListener('click', () => {
     const feel = form.querySelector('[name=feel]:checked')?.value;
     if (!feel) { toast(`Indique ton ressenti sur le ${SPORTS[s.alt].label.toLowerCase()}.`); return; }
@@ -381,6 +583,7 @@ function renderProfile() {
       <button class="btn" id="new-race">Ajouter un chrono</button>
     </section>
     ${p.adjustments.length ? `<section class="card"><h2>Historique des ajustements</h2><ul class="adj">${p.adjustments.slice().reverse().map((a) => `<li><strong>${esc(dateShort(a.date))}</strong> — ${a.reasons.map(esc).join(' ')}</li>`).join('')}</ul></section>` : ''}
+    ${garminProfileCard()}
     <section class="card">
       <h2>Données</h2>
       <p class="muted">Tout est stocké sur ton téléphone. Exporte une sauvegarde de temps en temps.</p>
@@ -390,8 +593,9 @@ function renderProfile() {
         <button class="btn" id="redo">Refaire le questionnaire</button>
       </div>
     </section>
-    <p class="muted center small">Run Coach · v0.6</p>`;
+    <p class="muted center small">Run Coach · v0.7</p>`;
 
+  bindGarminProfile();
   view.querySelector('#new-race').addEventListener('click', () => {
     showSheet(`<h2>Nouveau chrono</h2><form id="nr">
       <div class="choices">${[[5000, '5 km'], [10000, '10 km'], [21097, 'Semi'], [42195, 'Marathon']].map(([m, l]) => `<label class="choice small"><input type="radio" name="d" value="${m}"><span>${l}</span></label>`).join('')}</div>
@@ -416,7 +620,7 @@ function renderProfile() {
   });
   view.querySelector('#import').addEventListener('change', async (ev) => {
     try {
-      state = store.importJSON(await ev.target.files[0].text());
+      state = normalize({ ...store.importJSON(await ev.target.files[0].text()), garmin: state.garmin });
       persist();
       toast('Sauvegarde restaurée.');
       route();
