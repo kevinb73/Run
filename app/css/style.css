@@ -370,8 +370,8 @@ h2 { font-weight: 800; }
 .today-stats .range { font-size: 1.35rem; padding-top: 0.45rem; }
 .today-stats b { display: block; font-size: 2rem; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.1; }
 .today-stats span { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; }
-/* Bouton sobre sur cet écran : le volt plein sur toute la largeur agressait l'œil. */
-.today .btn.primary { width: 100%; min-height: 50px; background: var(--surface-2); color: #fff; border: 1px solid var(--border); }
+/* Volt adouci : fond vert très sombre, texte volt (le volt plein sur toute la largeur agressait l'œil). */
+.today .btn.primary { width: 100%; min-height: 50px; background: #2a3112; color: var(--accent); border: 1px solid #4a5a12; }
 .today .move-today { width: 100%; margin-top: 10px; border-color: var(--border); }
 .today-alt { display: flex; align-items: center; gap: 6px; margin: -6px 0 14px; }
 
