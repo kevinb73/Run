@@ -233,6 +233,12 @@ function sessionCard(s, { big = false } = {}) {
 }
 
 /** Grand bloc « séance du jour » : ce qu'on doit voir en premier en ouvrant l'app. */
+/** Déjà couru aujourd'hui (séance du plan, bonus ou course libre) : on ne propose pas une 2e course. */
+function alreadyRan(t) {
+  return allSessions().some((x) => x.date === t && x.type !== 'sport' && state.log[x.id]?.done && !state.log[x.id]?.replacedBy)
+    || state.freeRuns.some((r) => r.date === t);
+}
+
 function todayHero(s, t, canMove, bonusOk) {
   const [main, ...rest] = s.title.split(' — ');
   const detail = rest.join(' — ');
@@ -292,8 +298,9 @@ function renderToday() {
     ? `<section class="card"><h2>Cycle terminé</h2><p>Le cycle suivant repart de ton niveau actuel${p.profile.fitnessGoal === 'restart' ? ' : passage au mode « Courir régulièrement »' : ''}.</p><button class="btn primary" id="new-cycle">Lancer le cycle suivant</button></section>`
     : '<section class="card"><p>Plan terminé. Bravo ! Refais le questionnaire (onglet Profil) pour un nouvel objectif.</p></section>';
   const painStop = painAdvice(p, state.log, t, state.painResolvedAt)?.level === 'stop';
-  const canMove = next && canMoveToToday(next, state.log, t) && !painStop;
-  const bonusOk = next && next.date !== t && !painStop && !onPause(t) && canAddBonus(p, state.log, t);
+  const ranToday = alreadyRan(t);
+  const canMove = next && !ranToday && canMoveToToday(next, state.log, t) && !painStop;
+  const bonusOk = next && !ranToday && next.date !== t && !painStop && !onPause(t) && canAddBonus(p, state.log, t);
   view.innerHTML = `
     ${pauseBlock(t)}
     ${painBlock(t)}
@@ -884,7 +891,7 @@ function renderSession(id) {
     <p>${esc(s.description)}</p>
     ${s.alt ? `<section class="card alt-note"><p><strong>${sportIcon(s.alt)} Jour de ${SPORTS[s.alt].label.toLowerCase()} possible.</strong> Tu fais <strong>l'un ou l'autre</strong>, pas les deux. Si tu vas au ${SPORTS[s.alt].label.toLowerCase()}, indique-le ci-dessous : la séance sera comptée comme remplacée.</p></section>` : ''}
     ${s.steps.length ? stepsHTML(s.steps) : ''}
-    ${canMoveToToday(s, state.log, t) ? `<button class="btn move-today" data-move="${s.id}">↻ Faire cette séance aujourd'hui</button>` : ''}
+    ${canMoveToToday(s, state.log, t) && !alreadyRan(t) ? `<button class="btn move-today" data-move="${s.id}">↻ Faire cette séance aujourd'hui</button>` : ''}
     ${s.movedFrom && s.movedFrom !== s.date ? `<p class="muted small">Déplacée (prévue initialement le ${esc(dateShort(s.movedFrom))}).</p>` : ''}
     ${s.downgraded ? '<p class="muted small">Transformée en footing (récupération ou charge trop élevée).</p>' : ''}
     ${s.adjustedFrom ? `<p class="muted small">Ajustée après ta dernière séance du même type (prévue : « ${esc(s.adjustedFrom)} »).</p>` : ''}
@@ -1229,7 +1236,7 @@ function renderProfile() {
         <button class="btn" id="redo">Refaire le questionnaire</button>
       </div>
     </section>
-    <p class="muted center small">Run Coach · v0.22</p>`;
+    <p class="muted center small">Run Coach · v0.23</p>`;
 
   bindGarminProfile();
   view.querySelector('#pause-btn')?.addEventListener('click', pauseSheet);
