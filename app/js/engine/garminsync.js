@@ -72,7 +72,10 @@ export function applyActivities(plan, log, activities, known) {
   const all = () => p.weeks.flatMap((w) => w.sessions);
 
   // Une activité antérieure au plan (ou à sa création) ne doit jamais cocher une séance du plan.
-  const planStart = [p.weeks[0]?.start, p.createdAt].filter(Boolean).sort().at(-1) ?? '';
+  // Une séance avancée avant le début officiel du plan (« Faire cette séance aujourd'hui ») ouvre le plan plus tôt.
+  const firstSession = p.weeks.flatMap((w) => w.sessions).map((s) => s.date).sort()[0];
+  const start = [p.weeks[0]?.start, firstSession].filter(Boolean).sort()[0];
+  const planStart = [start, p.createdAt].filter(Boolean).sort().at(-1) ?? '';
   for (const a of [...activities].sort((x, y) => (x.start ?? '').localeCompare(y.start ?? ''))) {
     if (!a?.id || newKnown[a.id] || !a.date) continue;
     if (a.date < planStart) { newKnown[a.id] = 'pre-plan'; continue; }
