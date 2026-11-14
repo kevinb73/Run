@@ -94,6 +94,7 @@ Piste commerciale associée : niche « préparation physique des arbitres » (vo
 | 4.2 | Prédiction 10 km dans Progrès | Quand la sortie longue dépasse 10–12 km | Petit |
 | 4.3 | Suivi des chaussures (km par paire) | Changer avant usure | Petit |
 | 4.4 | Ajustement chaleur (> 25 °C) | Utile à partir du printemps | Petit |
+| 4.5 | **Trouver une boucle** de la distance du jour autour de soi (carte OpenStreetMap, calcul OpenRouteService/GraphHopper, préférence terrain souple/plat) ; envoi sur la montre si l'API le permet, sinon fichier GPX | En attendant : « Parcours aller-retour » de la Forerunner 965. Pas avant plusieurs semaines de course | ~½ journée |
 
 ---
 
