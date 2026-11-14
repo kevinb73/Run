@@ -224,7 +224,13 @@ test('envoi refusé par le serveur (renfo) : pas de boucle de réaffichage, le d
   const { renders, y } = await p.evaluate(() => ({ renders: window.__renders, y: window.scrollY }));
   assert.ok(renders <= 1, `écran réaffiché ${renders} fois en 3 s`);
   assert.ok(y > 100, `position de défilement conservée (${y})`);
+  // Bouton « Envoyer » : retente, échoue, et redevient utilisable (jamais bloqué sur « Envoi en cours… »)
+  await p.click('#push-week'); await p.waitForTimeout(1500);
+  assert.equal((await p.locator('#push-week').innerText()).trim().toLowerCase(), 'envoyer sur ma montre');
+  assert.ok(!(await p.locator('#push-week').isDisabled()));
   await failUploads(null);
+  await p.click('#push-week'); await p.waitForTimeout(1500);
+  assert.equal(await p.locator('#push-week').count(), 0, 'une fois le serveur à jour, tout part et le bouton disparaît');
   noErrors(p);
 });
 

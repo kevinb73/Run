@@ -146,6 +146,7 @@ Niche la plus prometteuse : **préparation physique des arbitres** (tests obliga
 | v0.32 | Records personnels (plus longue sortie / durée, meilleure allure, 5 km estimé), caps (20/30/45/60 min, 5/10 km, cumuls), série de semaines régulières ; célébration sur Aujourd'hui ; test statique des liens entre modules |
 | v0.33 | Coach ChatGPT : connecteur MCP en lecture seule sur le serveur (profil et plan, séances récentes, bilan mensuel, forme et charge, douleurs et ajustements), adresse secrète affichée dans Profil |
 | v0.34 | Correctif : saccades sur Aujourd'hui (boucle de réaffichage quand le serveur refusait l'envoi du renfo) ; la position de défilement est conservée lors d'un rafraîchissement |
+| v0.35 | Correctif : bouton « Envoyer sur ma montre » qui restait bloqué sur « Envoi en cours… » après un refus du serveur ; un appui relance l'envoi |
 
 ## Coûts récurrents
 
