@@ -134,6 +134,7 @@ Niche la plus prometteuse : **préparation physique des arbitres** (tests obliga
 | v0.19 | Petite base (sortie max < 6 km) : plan calé sur le niveau réel (≈ 20–30 min/séance au départ, sortie longue +15 %/sem., Fondation sans séance de qualité) |
 | v0.20–v0.21 | Séance avancée avant le début du plan reconnue ; « Courir en plus aujourd'hui » (footing bonus ~25 min sans rien décaler) |
 | v0.22 | Footing dur ou cœur trop haut → footing suivant (≤ 3 j) allégé de 20 %, sans accélérations |
+| v0.23–v0.24 | Plus de 2e course proposée le même jour ; futsal / arbitrage notés sans montre : durée + ressenti comptés dans la charge (méthode RPE) |
 
 ## Coûts récurrents
 

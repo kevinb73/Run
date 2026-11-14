@@ -3,9 +3,22 @@
 
 import { addDays, daysBetween } from './dates.js';
 
+const RPE_SCALE = 0.45; // 60 min de futsal « Correct » (RPE 6) ≈ 160, de l'ordre de la charge Garmin d'un match
+export const FEEL_RPE = { easy: 4, ok: 6, hard: 8 };
+
+/** Sports notés à la main avec une durée (pas d'activité Garmin) → pseudo-activités pour la charge. */
+export function manualActivities(plan, log) {
+  return plan.weeks.flatMap((w) => w.sessions)
+    .map((s) => ({ s, e: log[s.id] }))
+    .filter(({ e }) => e?.done && e.sportMin > 0 && e.source !== 'garmin')
+    .map(({ s, e }) => ({ id: `manual-${s.id}`, date: s.date, durationSec: e.sportMin * 60, rpe: FEEL_RPE[e.feel] ?? 6 }));
+}
+
 /** Charge d'une activité : celle calculée par Garmin, sinon TRIMP de Banister, sinon durée × intensité moyenne. */
 export function activityLoad(a, hr) {
   if (a.trainingLoad) return a.trainingLoad;
+  // Sport noté à la main (sans montre) : méthode RPE de Foster (durée × effort perçu), ramenée à l'échelle Garmin.
+  if (a.rpe) return Math.round(((a.durationSec ?? 0) / 60) * a.rpe * RPE_SCALE);
   const min = (a.durationSec ?? 0) / 60;
   if (a.avgHr && hr?.maxHr && hr?.restHr && hr.maxHr > hr.restHr) {
     const x = Math.min(1, Math.max(0, (a.avgHr - hr.restHr) / (hr.maxHr - hr.restHr)));

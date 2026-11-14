@@ -498,3 +498,15 @@ test('footing dur ou cœur haut : le footing suivant (≤ 3 j) est allégé de 2
   assert.ok(r2.note);
   assert.equal(applyEasyFeedback(r2.plan, { [id]: { done: true, feel: 'hard' } }, id, null).note, null);
 });
+
+test('futsal noté sans montre : la durée et le ressenti comptent dans la charge', async () => {
+  const { manualActivities, activityLoad } = await import('../app/js/engine/load.js');
+  const plan = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, weeklyKm: 5, longestRunKm: 3, otherSports: [{ day: 2, kind: 'futsal' }] }, { today: TODAY });
+  const futsal = plan.weeks[0].sessions.find((s) => s.type === 'sport');
+  const acts = manualActivities(plan, { [futsal.id]: { done: true, feel: 'hard', sportMin: 60 } });
+  assert.equal(acts.length, 1);
+  assert.equal(acts[0].date, futsal.date);
+  assert.equal(activityLoad(acts[0], null), Math.round(60 * 8 * 0.45));
+  // Importé de Garmin : pas de double comptage
+  assert.equal(manualActivities(plan, { [futsal.id]: { done: true, feel: 'hard', sportMin: 60, source: 'garmin' } }).length, 0);
+});
