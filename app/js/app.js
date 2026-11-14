@@ -9,6 +9,8 @@ import { readinessAdvice, formClass, LEVEL_FR, HRV_FR } from './engine/readiness
 import { api, sessionPayload } from './garmin.js';
 import { lineChart, volumeChart as weeklyVolumeChart, progressData } from './progress.js';
 import { buildRecap } from './engine/recap.js';
+import { pausePlan, resumeEarly, PAUSE_REASONS } from './engine/pause.js';
+import { painAdvice, PAIN_ZONES, PAIN_LEVELS } from './engine/pain.js';
 import { vdotFromPerformance, predictTime } from './engine/vdot.js';
 import { todayISO, daysBetween, addDays, mondayOf } from './engine/dates.js';
 import { visibleSteps, defaultDraft } from './onboarding.js';
@@ -267,8 +269,10 @@ function renderToday() {
     : '<section class="card"><p>Plan terminé. Bravo ! Refais le questionnaire (onglet Profil) pour un nouvel objectif.</p></section>';
   view.innerHTML = `
     <header class="hero">${hero}</header>
+    ${pauseBlock(t)}
+    ${painBlock(t)}
     ${next ? `<h2 class="section-title">${next.date === t ? 'Aujourd\'hui' : 'Prochaine séance'}</h2>${sessionCard(next, { big: true })}
-      ${canMoveToToday(next, state.log, t) ? `<button class="btn ghost move-today" data-move="${next.id}">↻ Faire cette séance aujourd'hui</button>` : ''}` : finished}
+      ${canMoveToToday(next, state.log, t) && painAdvice(p, state.log, t, state.painResolvedAt)?.level !== 'stop' ? `<button class="btn ghost move-today" data-move="${next.id}">↻ Faire cette séance aujourd'hui</button>` : ''}` : finished}
     ${missed.length ? `<section class="card warn"><p><strong>${missed.length} séance(s) passée(s) sans retour.</strong> Indique si tu les as faites : c'est ce qui permet d'adapter le plan.</p>${missed.map((s) => sessionCard(s)).join('')}</section>` : ''}
     ${readinessBlock(t, next)}
     ${makeupBlock(t, makeup)}
@@ -291,6 +295,7 @@ function renderToday() {
     analyzePending();
   }));
   bindCoachBlocks(t, next, makeup);
+  bindCareBlocks(t);
   view.querySelector('#push-week')?.addEventListener('click', () => pushWeek());
   view.querySelector('#sync-now')?.addEventListener('click', () => syncActivities(true));
   syncActivities(false).then(async () => {
@@ -563,7 +568,7 @@ async function refreshPushed() {
   if (!garminOn()) return;
   const t = today();
   for (const [id, info] of Object.entries(state.pushed)) {
-    if (info.date < t) continue;
+    if (info.date < t || state.log[id]?.done) continue; // séance déjà faite : on n'y touche plus
     const s = findSession(id);
     try {
       if (s && !s.optional) await pushSession(s);
@@ -577,7 +582,7 @@ async function refreshPushed() {
 function weeklyCoach() {
   const p = state.plan;
   const t = today();
-  if (!garminOn() || p.profile.fitnessGoal === 'restart') return;
+  if (!garminOn() || p.profile.fitnessGoal === 'restart' || onPause(t)) return;
   if ((state.lastAutoAdapt ?? '') >= mondayOf(t) || t < addDays(p.weeks[0].start, 7)) return;
   state.lastAutoAdapt = mondayOf(t);
   const { plan, adjustment } = adaptPlan(p, state.log, t, null, state.hr, currentLoad());
@@ -850,6 +855,7 @@ function renderSession(id) {
           <label class="choice small"><input type="radio" name="feel" value="hard" ${e.feel === 'hard' ? 'checked' : ''}><span>Dur</span></label>
         </div>
         ${s.optional ? '' : `<label class="field">Distance réelle (km)<input type="number" inputmode="decimal" step="0.1" name="km" value="${e.actualKm ?? s.km}"></label>`}
+        ${s.optional ? '' : painFields(e.pain)}
         <label class="field">Note (optionnel)<input type="text" name="note" value="${esc(e.note ?? '')}" maxlength="200"></label>
         <div class="actions">
           <button type="button" class="btn ghost" id="skip">${e.skipped ? 'Annuler' : s.optional ? 'Pas cette fois' : 'Pas faite'}</button>
@@ -863,7 +869,7 @@ function renderSession(id) {
     ev.preventDefault();
     const feel = form.querySelector('[name=feel]:checked')?.value;
     if (!feel) { toast('Indique ton ressenti : c\'est ce qui permet d\'adapter le plan.'); return; }
-    state.log[id] = { done: true, feel, actualKm: s.optional ? undefined : Number(form.km.value) || s.km, note: form.note.value.trim() || undefined, at: t };
+    state.log[id] = { ...e, done: true, skipped: undefined, feel, actualKm: s.optional ? undefined : Number(form.km.value) || s.km, note: form.note.value.trim() || undefined, at: t, pain: readPain(form) ?? e.pain };
     persist();
     if (s.type === 'race') askRaceResult(s);
     else if (s.type === 'test') askTestResult(s);
@@ -970,7 +976,125 @@ function renderRecap(id) {
       <span>${esc(x.actual)}${x.hr ? ` · ${x.hr} bpm` : ''} ${x.status ? `<b>${st[x.status]}</b>` : ''}</span></li>`).join('')}</ol></section>`
       : QUALITY_TYPES.includes(s.type) ? '<p class="muted small">Lance la séance depuis ta montre pour avoir le détail répétition par répétition.</p>' : ''}
     ${e.analysis?.details?.length ? `<section class="card"><h2>Analyse détaillée</h2><ul class="adj">${e.analysis.details.map((d) => `<li>${esc(d)}</li>`).join('')}</ul></section>` : ''}
+    <section class="card"><h2>Une douleur ?</h2>
+      ${e.pain ? `<p>${e.pain.level ? `Signalée : ${esc(PAIN_LEVELS[e.pain.level])} · ${esc(PAIN_ZONES[e.pain.zone] ?? '')}` : 'Aucune douleur signalée ✓'}</p>` : '<p class="muted">Pendant ou après la séance : c\'est ce qui permet de prévenir les blessures.</p>'}
+      <form id="pain-form">${painFields(e.pain)}<button class="btn" type="submit">${e.pain ? 'Mettre à jour' : 'Enregistrer'}</button></form></section>
     ${e.calories ? '<p class="muted small center">Calories : estimation Garmin (±10–20 %).</p>' : ''}`;
+  view.querySelector('#pain-form')?.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    state.log[id] = { ...state.log[id], pain: readPain(ev.currentTarget) ?? { level: 0 } };
+    persist();
+    const adv = painAdvice(state.plan, state.log, today(), state.painResolvedAt);
+    toast(adv && adv.level !== 'watch' ? 'Douleur notée : regarde le conseil sur l\'écran Aujourd\'hui.' : 'Merci, c\'est noté.');
+    renderRecap(id);
+  });
+}
+
+// ---------------- Douleur & pause ----------------
+
+function painFields(pain) {
+  const lvl = pain?.level ?? 0;
+  return `<div class="pain-fields"><p class="field-label">Douleur</p>
+    <div class="choices pain-levels">${Object.entries(PAIN_LEVELS).map(([v, l]) => `<label class="choice small"><input type="radio" name="painLevel" value="${v}" ${Number(v) === lvl ? 'checked' : ''}><span>${esc(l.split(' (')[0])}</span></label>`).join('')}</div>
+    <label class="field pain-zone" ${lvl ? '' : 'hidden'}>Où ?<select name="painZone">${Object.entries(PAIN_ZONES).map(([k, l]) => `<option value="${k}" ${pain?.zone === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label></div>`;
+}
+
+function readPain(form) {
+  const v = form.querySelector('[name=painLevel]:checked')?.value;
+  if (v == null) return null;
+  const level = Number(v);
+  return level ? { level, zone: form.querySelector('[name=painZone]').value } : { level: 0 };
+}
+
+// Affiche le choix de la zone dès qu'une douleur est cochée (délégation : vaut pour tous les formulaires).
+document.addEventListener('change', (ev) => {
+  if (ev.target.name !== 'painLevel') return;
+  const zone = ev.target.closest('form, .sheet')?.querySelector('.pain-zone');
+  if (zone) zone.hidden = ev.target.value === '0';
+});
+
+const onPause = (t) => state.pause && t < state.pause.until;
+
+function pauseBlock(t) {
+  if (!onPause(t)) return '';
+  return `<section class="card warn"><h2>⏸ En pause</h2>
+    <p>${esc(PAUSE_REASONS[state.pause.reason] ?? '')} · reprise prévue le <strong>${esc(dateLong(state.pause.until))}</strong>.</p>
+    <p class="muted">Repose-toi vraiment : marche, sommeil, et pas de course « pour voir ».</p>
+    <button class="btn" id="resume-now">Je reprends dès aujourd'hui</button></section>`;
+}
+
+function painBlock(t) {
+  if (onPause(t)) return '';
+  const adv = painAdvice(state.plan, state.log, t, state.painResolvedAt);
+  if (!adv) return '';
+  const cls = adv.level === 'stop' ? 'warn danger' : adv.level === 'caution' ? 'warn' : '';
+  return `<section class="card ${cls}"><h2>${adv.level === 'stop' ? '🛑' : '⚠️'} Douleur : ${esc(adv.zone)}</h2><p>${esc(frDates(adv.text))}</p>
+    <div class="actions wrap">
+      ${adv.actions.includes('pause') ? '<button class="btn primary" id="pain-pause">Pause de 3 jours</button>' : ''}
+      ${adv.actions.includes('ease') ? '<button class="btn" id="pain-ease">Alléger la prochaine séance</button>' : ''}
+      <button class="btn ghost" id="pain-ok">C'est passé</button>
+    </div></section>`;
+}
+
+function applyPause(days, reason) {
+  const t = today();
+  const r = pausePlan(state.plan, state.log, t, days, reason);
+  state.plan = r.plan;
+  state.pause = r.pause;
+  persist();
+  refreshPushed();
+  showSheet(`<h2>Pause enregistrée</h2><ul>${r.adjustment.reasons.map((x) => `<li>${esc(frDates(x))}</li>`).join('')}</ul>
+    <p class="muted">Les séances de la pause sont retirées de ta montre.</p><button class="btn primary" data-close>OK</button>`);
+  location.hash = '#/';
+  route();
+}
+
+function pauseSheet() {
+  showSheet(`<h2>Faire une pause</h2>
+    <form id="pz"><p class="field-label">Pourquoi ?</p>
+    <div class="choices">${Object.entries(PAUSE_REASONS).map(([k, l]) => `<label class="choice small"><input type="radio" name="reason" value="${k}" ${k === 'illness' ? 'checked' : ''}><span>${esc(l)}</span></label>`).join('')}</div>
+    <p class="field-label">Combien de temps ?</p>
+    <div class="choices">${[3, 5, 7, 10, 14, 21].map((d) => `<label class="choice small"><input type="radio" name="days" value="${d}" ${d === 7 ? 'checked' : ''}><span>${d} jours</span></label>`).join('')}</div>
+    <p class="hint">En cas de maladie : pas de course avec de la fièvre ou des symptômes sous le cou (toux, courbatures). Tu pourras reprendre plus tôt si besoin.</p>
+    <button class="btn primary" type="submit">Mettre le plan en pause</button></form>`, (sheet) => {
+    sheet.querySelector('#pz').addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      const f = ev.currentTarget;
+      closeSheet();
+      applyPause(Number(f.querySelector('[name=days]:checked').value), f.querySelector('[name=reason]:checked').value);
+    });
+  });
+}
+
+function bindCareBlocks(t) {
+  view.querySelector('#resume-now')?.addEventListener('click', () => {
+    const r = resumeEarly(state.plan, state.log, state.pause, t);
+    state.plan = r.plan;
+    state.pause = null;
+    persist();
+    refreshPushed();
+    toast('Plan relancé à partir d\'aujourd\'hui, en douceur.');
+    renderToday();
+  });
+  view.querySelector('#pain-pause')?.addEventListener('click', () => {
+    state.painResolvedAt = t;
+    applyPause(3, 'injury');
+  });
+  view.querySelector('#pain-ease')?.addEventListener('click', () => {
+    const nx = allSessions().find((s) => s.date >= t && s.date <= addDays(t, 3) && !s.optional && !state.log[s.id] && s.type !== 'race');
+    if (!nx) { toast('Pas de séance dans les 3 prochains jours.'); return; }
+    if (HARD_TYPES.includes(nx.type) || nx.type === 'long') state.plan = downgradeToEasy(state.plan, nx.id);
+    state.plan = shortenEasy(state.plan, nx.id, 0.6);
+    persist();
+    repushIfNeeded([nx.id]);
+    toast(`« ${findSession(nx.id).title} » du ${dateShort(nx.date)} allégée.`);
+    renderToday();
+  });
+  view.querySelector('#pain-ok')?.addEventListener('click', () => {
+    state.painResolvedAt = t;
+    persist();
+    renderToday();
+  });
 }
 
 // ---------------- Progrès ----------------
@@ -1045,6 +1169,10 @@ function renderProfile() {
       <button class="btn" id="new-race">Ajouter un chrono</button>
     </section>
     ${p.adjustments.length ? `<section class="card"><h2>Historique des ajustements</h2><ul class="adj">${p.adjustments.slice().reverse().map((a) => `<li><strong>${esc(dateShort(a.date))}</strong> — ${a.reasons.map(esc).join(' ')}</li>`).join('')}</ul></section>` : ''}
+    <section class="card"><h2>⏸ Pause</h2>
+      <p class="muted">Maladie, blessure, vacances : le plan se suspend puis reprend en douceur au lieu de repartir comme si de rien n'était.</p>
+      ${onPause(today()) ? `<p>En pause jusqu'au <strong>${esc(dateLong(state.pause.until))}</strong>.</p>` : '<button class="btn" id="pause-btn">Faire une pause</button>'}
+    </section>
     ${garminProfileCard()}
     <section class="card">
       <h2>Données</h2>
@@ -1055,9 +1183,10 @@ function renderProfile() {
         <button class="btn" id="redo">Refaire le questionnaire</button>
       </div>
     </section>
-    <p class="muted center small">Run Coach · v0.14</p>`;
+    <p class="muted center small">Run Coach · v0.15</p>`;
 
   bindGarminProfile();
+  view.querySelector('#pause-btn')?.addEventListener('click', pauseSheet);
   view.querySelector('#g-restore')?.addEventListener('click', () => {
     if (confirm('Remplacer le plan de ce téléphone par la dernière sauvegarde du serveur ?')) restoreSheet();
   });

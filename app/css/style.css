@@ -341,3 +341,9 @@ a { color: inherit; }
 .recap-steps li b { color: var(--z-r); font-weight: 700; }
 .recap-steps li.ok b { color: var(--ok); }
 .recap-btn { width: 100%; margin: 4px 0 8px; }
+
+/* ----- Douleur & pause ----- */
+.card.danger { border-color: var(--z-r); }
+.field-label { font-weight: 600; margin: 12px 0 0; }
+.pain-levels { grid-template-columns: repeat(4, 1fr) !important; margin: 8px 0; }
+.field select { width: 100%; min-height: 46px; margin-top: 6px; padding: 8px 12px; border-radius: 12px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text); font: inherit; }

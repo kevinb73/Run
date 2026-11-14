@@ -383,3 +383,54 @@ test('import : une course antérieure au plan ne coche jamais une séance du pla
   assert.equal(r.freeRuns.length, 0);
   assert.equal(r.known[1], 'pre-plan');
 });
+
+test('pause : séances retirées, reprise allégée, fin de cycle repoussée', async () => {
+  const { pausePlan, resumeFactors } = await import('../app/js/engine/pause.js');
+  const plan = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, easyPaceSec: 510, days: [0, 3, 6], longRunDay: 6 }, { today: TODAY });
+  const from = '2026-12-02';
+  const { plan: p2, pause } = pausePlan(plan, {}, from, 7, 'illness');
+  const all = p2.weeks.flatMap((w) => w.sessions);
+  assert.equal(pause.until, '2026-12-09');
+  assert.ok(!all.some((s) => s.date >= from && s.date < '2026-12-09'), 'aucune séance pendant la pause');
+  assert.ok(all.some((s) => s.date >= '2026-12-09'), 'le plan reprend');
+  assert.equal(p2.profile.raceDate > plan.profile.raceDate, true, 'fin de cycle repoussée');
+  const ids = all.map((s) => s.id);
+  assert.equal(new Set(ids).size, ids.length);
+  const volBefore = plan.weeks.find((w) => w.start === '2026-11-30').volumeKm;
+  const volAfter = p2.weeks.find((w) => w.start === '2026-12-14').volumeKm;
+  assert.ok(volAfter <= volBefore * 1.1, 'reprise sans hausse brutale');
+  assert.ok(resumeFactors(21).vdot < 0 && resumeFactors(3).vdot === 0);
+  // Prépa course : la date de course ne bouge pas
+  const race = generatePlan(base, { today: TODAY });
+  const { plan: r2 } = pausePlan(race, {}, '2026-12-10', 10, 'holiday');
+  assert.equal(r2.profile.raceDate, race.profile.raceDate);
+  assert.equal(r2.weeks.at(-1).sessions.at(-1).type, 'race');
+  // Juste avant la course : pas de recalcul, seulement les jours retirés
+  const { plan: r3 } = pausePlan(race, {}, '2027-03-14', 3, 'illness');
+  assert.ok(!r3.weeks.flatMap((w) => w.sessions).some((s) => s.date >= '2027-03-14' && s.date < '2027-03-17'));
+});
+
+test('douleur : forte → pause conseillée ; moyenne ou répétée → prudence ; avis médical mentionné', async () => {
+  const { painAdvice } = await import('../app/js/engine/pain.js');
+  const plan = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, easyPaceSec: 510, days: [0, 3, 6], longRunDay: 6 }, { today: TODAY });
+  const ss = plan.weeks.flatMap((w) => w.sessions).filter((s) => !s.optional);
+  const today = ss[5].date;
+  assert.equal(painAdvice(plan, {}, today), null);
+  const strong = { [ss[4].id]: { done: true, pain: { level: 8, zone: 'knee' } } };
+  const a = painAdvice(plan, strong, today);
+  assert.equal(a.level, 'stop');
+  assert.ok(a.actions.includes('pause') && a.text.includes('consulte'));
+  const twice = { [ss[3].id]: { done: true, pain: { level: 2, zone: 'achilles' } }, [ss[4].id]: { done: true, pain: { level: 2, zone: 'achilles' } } };
+  assert.equal(painAdvice(plan, twice, today).level, 'caution');
+  // « C'est passé » efface les douleurs antérieures
+  assert.equal(painAdvice(plan, strong, today, ss[4].date), null);
+});
+
+test('pause : une séance déjà faite le jour même est conservée', async () => {
+  const { pausePlan } = await import('../app/js/engine/pause.js');
+  const plan = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, easyPaceSec: 510, days: [1, 3, 6], longRunDay: 6 }, { today: TODAY });
+  const tue = plan.weeks[0].sessions.find((s) => s.date === '2026-11-17');
+  const log = { [tue.id]: { done: true, feel: 'hard', pain: { level: 8, zone: 'knee' } } };
+  const { plan: p2 } = pausePlan(plan, log, '2026-11-17', 3, 'injury');
+  assert.ok(p2.weeks.flatMap((w) => w.sessions).some((s) => s.id === tue.id), 'historique conservé');
+});
