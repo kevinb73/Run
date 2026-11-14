@@ -130,13 +130,13 @@ const iconOf = (s) => (s.type === 'sport' ? SPORTS[s.sport]?.icon : TYPE_ICON[s.
 
 function sessionCard(s, { big = false } = {}) {
   const entry = state.log[s.id];
-  const status = entry?.done ? '<span class="badge done">Fait</span>' : entry?.skipped ? `<span class="badge skip">${s.optional ? 'Pas fait' : 'Sautée'}</span>` : '';
+  const status = entry?.replacedBy ? `<span class="badge done">${SPORTS[entry.replacedBy].icon}</span>` : entry?.done ? '<span class="badge done">Fait</span>' : entry?.skipped ? `<span class="badge skip">${s.optional ? 'Pas fait' : 'Sautée'}</span>` : '';
   return `<a class="card session-card type-${s.type} ${big ? 'big' : ''}" href="#/session/${s.id}">
     <span class="icon" aria-hidden="true">${iconOf(s)}</span>
     <span class="body">
       <span class="date">${esc(big ? dateLong(s.date) : dateShort(s.date))}</span>
       <span class="title">${esc(s.title)}</span>
-      <span class="meta">${s.optional ? 'Facultatif' : `${s.km} km · ~${duration(s.min * 60)}`}</span>
+      <span class="meta">${s.optional ? 'Facultatif' : `${s.km} km · ~${duration(s.min * 60)}`}${s.alt ? ` · ou ${SPORTS[s.alt].icon} ${SPORTS[s.alt].label.toLowerCase()}` : ''}</span>
     </span>${status}</a>`;
 }
 
@@ -258,6 +258,7 @@ function renderSession(id) {
     <h1>${esc(s.title)}</h1>
     ${s.optional ? '<p class="big-meta">Facultatif</p>' : `<p class="big-meta">${s.km} km · ~${duration(s.min * 60)}</p>`}
     <p>${esc(s.description)}</p>
+    ${s.alt ? `<section class="card alt-note"><p><strong>${SPORTS[s.alt].icon} Jour de ${SPORTS[s.alt].label.toLowerCase()} possible.</strong> Tu fais <strong>l'un ou l'autre</strong>, pas les deux. Si tu vas au ${SPORTS[s.alt].label.toLowerCase()}, indique-le ci-dessous : la séance sera comptée comme remplacée.</p></section>` : ''}
     ${s.steps.length ? stepsHTML(s.steps) : ''}
     ${s.optional ? '' : `<section class="card">
       <h2>Garmin</h2>
@@ -276,8 +277,9 @@ function renderSession(id) {
         <label class="field">Note (optionnel)<input type="text" name="note" value="${esc(e.note ?? '')}" maxlength="200"></label>
         <div class="actions">
           <button type="button" class="btn ghost" id="skip">${e.skipped ? 'Annuler' : s.optional ? 'Pas cette fois' : 'Pas faite'}</button>
-          <button type="submit" class="btn primary">${e.done ? 'Mettre à jour' : s.optional ? 'J\'y suis allé' : 'Séance faite'}</button>
+          <button type="submit" class="btn primary">${e.done && !e.replacedBy ? 'Mettre à jour' : s.optional ? 'J\'y suis allé' : 'Séance faite'}</button>
         </div>
+        ${s.alt ? `<button type="button" class="btn alt-btn" id="replaced">${SPORTS[s.alt].icon} ${e.replacedBy ? `${SPORTS[s.alt].label} enregistré` : `J'ai fait du ${SPORTS[s.alt].label.toLowerCase()} à la place`}</button>` : ''}
       </form>
     </section>` : '<p class="muted center">Tu pourras saisir ton retour le jour de la séance.</p>'}`;
   const form = view.querySelector('#log-form');
@@ -289,6 +291,14 @@ function renderSession(id) {
     persist();
     if (s.type === 'race') askRaceResult(s);
     else { toast('Séance enregistrée 💪'); history.back(); }
+  });
+  view.querySelector('#replaced')?.addEventListener('click', () => {
+    const feel = form.querySelector('[name=feel]:checked')?.value;
+    if (!feel) { toast(`Indique ton ressenti sur le ${SPORTS[s.alt].label.toLowerCase()}.`); return; }
+    state.log[id] = { done: true, replacedBy: s.alt, feel, actualKm: 0, note: form.note.value.trim() || undefined, at: t };
+    persist();
+    toast(`${SPORTS[s.alt].label} enregistré ${SPORTS[s.alt].icon}`);
+    history.back();
   });
   view.querySelector('#skip')?.addEventListener('click', () => {
     if (e.skipped) delete state.log[id]; else state.log[id] = { skipped: true, at: t };
@@ -342,7 +352,7 @@ function renderProfile() {
         <button class="btn" id="redo">Refaire le questionnaire</button>
       </div>
     </section>
-    <p class="muted center small">Run Coach · v0.3</p>`;
+    <p class="muted center small">Run Coach · v0.4</p>`;
 
   view.querySelector('#new-race').addEventListener('click', () => {
     showSheet(`<h2>Nouveau chrono</h2><form id="nr">

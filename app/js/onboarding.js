@@ -178,8 +178,6 @@ export const STEPS = [
     read: (f, d) => {
       d.otherSports = Object.keys(SPORTS).flatMap((kind) =>
         [...f.querySelectorAll(`[name=sp-${kind}]:checked`)].map((x) => ({ day: Number(x.value), kind })));
-      const busy = new Set(d.otherSports.map((x) => x.day));
-      d.days = d.days.filter((x) => !busy.has(x));
     },
   },
   {
@@ -187,9 +185,10 @@ export const STEPS = [
     render: (d) => {
       const busy = new Set(d.otherSports.map((x) => x.day));
       const min = minDays(d);
-      return `<p class="lead">${isRestart(d) ? '3 séances par semaine suffisent en reprise : choisis au moins 3 jours, l\'app gardera les mieux espacés.' : `${min} à 6 jours. Le nombre de jours = le nombre de courses par semaine.`}${busy.size ? ' Les jours de sport sont grisés.' : ''}</p>
+      return `<p class="lead">${isRestart(d) ? '3 séances par semaine suffisent en reprise : choisis au moins 3 jours, l\'app gardera les mieux espacés.' : `${min} à 6 jours. Le nombre de jours = le nombre de courses par semaine.`}</p>
       <div class="days">${DAYS_SHORT.map((n, i) => `
-        <label class="day ${busy.has(i) ? 'busy' : ''}"><input type="checkbox" name="day" value="${i}" ${d.days.includes(i) ? 'checked' : ''} ${busy.has(i) ? 'disabled' : ''}><span>${busy.has(i) ? SPORTS[d.otherSports.find((x) => x.day === i).kind].icon : n}</span></label>`).join('')}</div>
+        <label class="day ${busy.has(i) ? 'busy' : ''}"><input type="checkbox" name="day" value="${i}" ${d.days.includes(i) ? 'checked' : ''}><span>${n}${busy.has(i) ? `<i>${SPORTS[d.otherSports.find((x) => x.day === i).kind].icon}</i>` : ''}</span></label>`).join('')}</div>
+      ${busy.size ? '<p class="hint">Tu peux aussi cocher un jour de futsal/arbitrage : ce jour-là, tu feras <strong>soit la course, soit ton sport</strong>. Le plan n\'y mettra jamais de séance dure.</p>' : ''}
       ${isFitness(d) && !isRestart(d) && busy.size ? '<p class="hint">Avec ton autre sport, 2 courses par semaine suffisent pour progresser en endurance.</p>' : ''}`;
     },
     read: (f, d) => {

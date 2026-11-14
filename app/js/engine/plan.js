@@ -120,8 +120,8 @@ function qualityPlan(phase, level, idxInPhase, nSessions, recovery, distance, li
 export function assignDays(days, longDay, nQuality, sportDays = []) {
   const quality = [];
   const candidates = days.filter((d) => d !== longDay);
-  // Jamais de séance dure le lendemain d'un sport intense (futsal, arbitrage) ; la veille est évitée si possible (score).
-  const allowed = candidates.filter((d) => !sportDays.some((sd) => (d - sd + 7) % 7 === 1));
+  // Jamais de séance dure un jour de sport possible ni le lendemain (futsal, arbitrage) ; la veille est évitée si possible (score).
+  const allowed = candidates.filter((d) => !sportDays.includes(d) && !sportDays.some((sd) => (d - sd + 7) % 7 === 1));
   for (let k = 0; k < nQuality; k++) {
     let best = null, bestScore = -1;
     for (const d of allowed) {
@@ -173,7 +173,6 @@ export function generatePlan(profile, opts) {
   const sports = profile.otherSports ?? [];
   const sportDays = [...new Set(sports.map((x) => x.day))];
   if (nSessions < (fitness ? 2 : 3)) throw new Error(`Il faut au moins ${fitness ? 2 : 3} jours de course par semaine.`);
-  if (days.some((d) => sportDays.includes(d))) throw new Error('Un jour de course tombe sur un jour de futsal/arbitrage.');
   if (!days.includes(profile.longRunDay)) throw new Error('Le jour de sortie longue doit faire partie des jours choisis.');
 
   // Début : lundi de cette semaine si on est en début de semaine, sinon lundi prochain.
@@ -270,7 +269,8 @@ export function generatePlan(profile, opts) {
       const date = addDays(weekStart, dayIdx);
       if (daysBetween(today, date) < 0) return; // jours déjà passés
       const est = W.estimate(s.steps, c.paces);
-      sessions.push({ id: `${weekOffset + i}-${dayIdx}`, date, ...s, km: est.km, min: est.min });
+      const alt = sports.find((x) => x.day === dayIdx)?.kind;
+      sessions.push({ id: `${weekOffset + i}-${dayIdx}`, date, ...s, km: est.km, min: est.min, ...(alt && !isRaceWeek ? { alt } : {}) });
     };
 
     if (isRaceWeek) {
@@ -290,7 +290,8 @@ export function generatePlan(profile, opts) {
       if (sportDays.length) qTypes = regular ? [] : qTypes.slice(0, Math.max(1, qTypes.length - 1));
       const slots = assignDays(days, profile.longRunDay, qTypes.length, sportDays);
       qTypes = qTypes.slice(0, slots.quality.length);
-      sessions.push(...sportSessions(sports, weekStart, today, weekOffset + i));
+      // Un jour à la fois « course » et « sport possible » : une seule carte « séance OU sport ».
+      sessions.push(...sportSessions(sports, weekStart, today, weekOffset + i, days));
 
       // Sortie longue
       // Rampe progressive vers la sortie longue maximale (fonction de la distance), bornée par
@@ -405,9 +406,10 @@ function generateRestartPlan(profile, opts) {
       const final = i === nWeeks - 1 && k === slots.length - 1;
       const s = W.runWalk(c, run, walk, reps, final);
       const est = W.estimate(s.steps, paces);
-      sessions.push({ id: `${weekOffset + i}-${d}`, date, ...s, km: est.km, min: est.min });
+      const alt = sports.find((x) => x.day === d)?.kind;
+      sessions.push({ id: `${weekOffset + i}-${d}`, date, ...s, km: est.km, min: est.min, ...(alt ? { alt } : {}) });
     });
-    sessions.push(...sportSessions(sports, weekStart, today, weekOffset + i));
+    sessions.push(...sportSessions(sports, weekStart, today, weekOffset + i, slots));
     sessions.sort((a, b) => a.date.localeCompare(b.date));
     weeks.push({
       index: weekOffset + i, start: weekStart, phase: 'restart', recovery: i < nWeeks - 3 && i % 4 === 3, raceWeek: false,
