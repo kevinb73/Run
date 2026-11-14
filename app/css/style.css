@@ -485,3 +485,5 @@ svg { flex: none; }
 .proposal { box-shadow: inset 3px 0 0 var(--accent); }
 .proposal p { margin: 6px 0; }
 .proposal .actions { margin-top: 10px; }
+/* Date du jour (haut de l'écran Aujourd'hui) : plus grande, casse normale, lisible à côté du titre géant */
+.today > .eyebrow:first-child { font-size: 0.95rem; letter-spacing: 0.02em; text-transform: none; font-weight: 600; color: color-mix(in srgb, var(--text) 70%, var(--bg)); margin: 6px 0 2px; }
