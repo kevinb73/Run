@@ -108,10 +108,37 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(self.fake.deleted, [r.json()["workoutId"]], "l'ancienne version est supprimée")
         self.assertEqual(self.fake.scheduled[-1][1], "2026-11-15")
 
-    def test_activities_only_running(self):
+    def test_activities_all_types(self):
         acts = self.c.get("/activities?start=2026-11-10&end=2026-11-20", headers=self.h).json()["activities"]
-        self.assertEqual(len(acts), 1)
+        self.assertEqual([a["type"] for a in acts], ["running", "indoor_soccer"])
         self.assertEqual(acts[0]["paceSecPerKm"], 510)
+        self.assertIsNone(acts[1]["paceSecPerKm"])
+
+    def test_laps(self):
+        self.fake.get_activity_splits = lambda aid: {"lapDTOs": [
+            {"distance": 2500.4, "duration": 900.2, "averageHR": 130},
+            {"distance": 1318.6, "duration": 360.0, "averageHR": 178},
+        ]}
+        laps = self.c.get("/activities/42/laps", headers=self.h).json()["laps"]
+        self.assertEqual(laps[1], {"distanceM": 1319, "durationSec": 360, "avgHr": 178})
+
+    def test_hr_profile(self):
+        self.fake.get_heart_rate_zones_v2 = lambda: [
+            {"sport": "DEFAULT", "maxHeartRateUsed": 190, "restingHeartRateUsed": 60},
+            {"sport": "RUNNING", "maxHeartRateUsed": 186, "restingHeartRateUsed": 55, "lactateThresholdHeartRateUsed": 168},
+        ]
+        self.assertEqual(self.c.get("/garmin/profile", headers=self.h).json(), {"maxHr": 186, "restHr": 55, "lthr": 168})
+
+    def test_backup_roundtrip_and_rotation(self):
+        self.assertEqual(self.c.get("/backup", headers=self.h).status_code in (200, 404), True)
+        for i in range(25):
+            r = self.c.put("/backup", headers=self.h, content=json.dumps({"plan": {"n": i}, "log": {}}))
+            self.assertEqual(r.status_code, 200, r.text)
+        got = self.c.get("/backup", headers=self.h).json()
+        self.assertEqual(got["data"]["plan"]["n"], 24)
+        self.assertLessEqual(len(list(srv.BACKUPS.glob("backup-*.json"))), 20)
+        self.assertEqual(self.c.put("/backup", headers=self.h, content="{}").status_code, 400)
+        self.assertEqual(self.c.put("/backup", headers={"X-Api-Key": "x"}, content="{}").status_code, 401)
 
     def test_cors(self):
         r = self.c.options("/workouts", headers={"Origin": "https://kevinb73.github.io", "Access-Control-Request-Method": "POST",

@@ -5,7 +5,7 @@ import { canMoveToToday, moveSession, downgradeToEasy } from './engine/reschedul
 import { applyActivities } from './engine/garminsync.js';
 import { api, sessionPayload } from './garmin.js';
 import { vdotFromPerformance, predictTime } from './engine/vdot.js';
-import { todayISO, daysBetween, addDays } from './engine/dates.js';
+import { todayISO, daysBetween, addDays, mondayOf } from './engine/dates.js';
 import { visibleSteps, defaultDraft } from './onboarding.js';
 import { esc, pace, paceRange, duration, dateLong, dateShort, dateFull, ZONES, TYPE_ICON, stepDuration, KIND_LABEL } from './format.js';
 
@@ -35,6 +35,55 @@ const today = () => todayISO();
 
 function persist() {
   if (!store.save(state)) toast('Impossible d\'enregistrer (stockage plein ou mode privé).');
+  scheduleBackup();
+}
+
+// ---------------- Sauvegarde sur le serveur ----------------
+
+let backupTimer = null;
+/** Sauvegarde automatique (quelques secondes après la dernière modification) si un serveur est configuré. */
+function scheduleBackup() {
+  if (!state.garmin?.url || !state.plan) return;
+  clearTimeout(backupTimer);
+  backupTimer = setTimeout(async () => {
+    const { garmin, ...rest } = state; // la clé du serveur ne part jamais dans la sauvegarde
+    try {
+      await api(state.garmin, 'PUT', '/backup', { app: 'run-coach', savedAt: new Date().toISOString(), ...rest, garminUrl: garmin?.url });
+      state.lastBackup = Date.now();
+      store.save(state);
+    } catch { /* hors ligne : on réessaiera à la prochaine modification */ }
+  }, 4000);
+}
+
+async function restoreFromServer(cfg) {
+  const { data } = await api(cfg, 'GET', '/backup');
+  if (!data?.plan) throw new Error('Sauvegarde vide.');
+  const { app: _app, savedAt: _s, garminUrl: _u, ...rest } = data;
+  let connected = false, name;
+  try { ({ connected, name } = await api(cfg, 'GET', '/garmin/status')); } catch { /* serveur OK mais statut indisponible */ }
+  state = normalize({ ...rest, garmin: { ...cfg, connected, name }, lastBackup: Date.parse(data.savedAt) || Date.now() });
+  store.save(state);
+  return data.savedAt;
+}
+
+function restoreSheet() {
+  showSheet(`<h2>Restaurer depuis mon serveur</h2>
+    <p class="muted">Récupère ton plan et ton historique sauvegardés automatiquement.</p>
+    <form id="rs"><label class="field">Adresse du serveur<input type="url" name="url" value="${esc(state.garmin?.url ?? '')}" placeholder="https://…" required></label>
+    <label class="field">Clé d'accès<input type="password" name="key" value="${esc(state.garmin?.key ?? '')}" required autocomplete="off"></label>
+    <p class="error"></p><button class="btn primary" type="submit">Restaurer</button></form>`, (sheet) => {
+    sheet.querySelector('#rs').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const f = ev.currentTarget;
+      try {
+        const when = await restoreFromServer({ url: f.url.value.trim().replace(/\/$/, ''), key: f.key.value.trim() });
+        closeSheet();
+        toast(`Plan restauré (sauvegarde du ${new Date(when).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}).`);
+        location.hash = '#/';
+        route();
+      } catch (ex) { f.querySelector('.error').textContent = ex.message; }
+    });
+  });
 }
 
 function toast(msg) {
@@ -85,7 +134,9 @@ function renderOnboarding() {
           <button type="submit" class="btn primary">${last ? 'Générer mon plan' : 'Continuer'}</button>
         </div>
       </form>
+      ${stepIdx === 0 && !state.plan ? '<button class="btn ghost restore-link" id="restore">J\'ai déjà un plan : restaurer depuis mon serveur</button>' : ''}
     </section>`;
+  view.querySelector('#restore')?.addEventListener('click', restoreSheet);
   const form = view.querySelector('#step-form');
   form.querySelectorAll('input[type=range]').forEach((r) => r.addEventListener('input', () => { r.nextElementSibling.textContent = `${r.value} km`; }));
   const noref = form.querySelector('[name=noref]');
@@ -220,7 +271,7 @@ function renderToday() {
   }));
   view.querySelector('#push-week')?.addEventListener('click', () => pushWeek());
   view.querySelector('#sync-now')?.addEventListener('click', () => syncActivities(true));
-  syncActivities(false).then(() => pushWeek({ silent: true }));
+  syncActivities(false).then(() => { weeklyCoach(); detectTestResults(); return pushWeek({ silent: true }); });
 }
 
 // ---------------- Garmin ----------------
@@ -238,8 +289,8 @@ function feelPrompt(t) {
   }).join('')}</section>`;
 }
 
-// Fenêtre d'envoi automatique : aujourd'hui + 7 jours (la semaine complète suivante est toujours couverte).
-const PUSH_DAYS = 7;
+// Fenêtre d'envoi automatique : aujourd'hui + 8 jours, pour qu'un samedi la sortie longue du dimanche suivant soit couverte.
+const PUSH_DAYS = 8;
 const toPush = (t) => allSessions().filter((s) => !s.optional && s.date >= t && s.date <= addDays(t, PUSH_DAYS) && !state.log[s.id]?.done);
 
 function garminTodayBlock(t) {
@@ -248,8 +299,8 @@ function garminTodayBlock(t) {
   const missing = soon.filter((s) => state.pushed[s.id]?.date !== s.date).length;
   const last = state.lastSync ? new Date(state.lastSync).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—';
   return `<section class="card"><div class="row between"><h2>⌚ Garmin</h2><span class="muted small">Synchro ${last}</span></div>
-    ${missing ? `<p class="muted">${missing} séance(s) des 8 prochains jours pas encore sur ta montre.</p><button class="btn primary" id="push-week">Envoyer sur ma montre</button>`
-      : soon.length ? '<p class="muted">Les séances des 8 prochains jours sont sur ta montre ✓ (envoi automatique à chaque ouverture)</p>' : ''}
+    ${missing ? `<p class="muted">${missing} séance(s) des 9 prochains jours pas encore sur ta montre.</p><button class="btn primary" id="push-week">Envoyer sur ma montre</button>`
+      : soon.length ? '<p class="muted">Les séances des 9 prochains jours sont sur ta montre ✓ (envoi automatique à chaque ouverture)</p>' : ''}
     <button class="btn ghost" id="sync-now">Récupérer mes courses</button>
     ${state.syncNotices?.length ? `<ul class="adj">${state.syncNotices.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}</section>`;
 }
@@ -307,11 +358,42 @@ async function refreshPushed() {
   pushWeek({ silent: true });
 }
 
+/** Bilan automatique une fois par semaine (le lundi ou au premier lancement de la semaine). */
+function weeklyCoach() {
+  const p = state.plan;
+  const t = today();
+  if (!garminOn() || p.profile.fitnessGoal === 'restart') return;
+  if ((state.lastAutoAdapt ?? '') >= mondayOf(t) || t < addDays(p.weeks[0].start, 7)) return;
+  state.lastAutoAdapt = mondayOf(t);
+  const { plan, adjustment } = adaptPlan(p, state.log, t, null, state.hr);
+  state.plan = plan;
+  persist();
+  if (adjustment.changed || !adjustment.reasons[0].startsWith('Rien')) {
+    refreshPushed();
+    showSheet(`<h2>Bilan de la semaine</h2><ul>${adjustment.reasons.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>
+      ${adjustment.vdotAfter !== adjustment.vdotBefore ? `<p class="muted">Niveau : ${adjustment.vdotBefore} → ${adjustment.vdotAfter}</p>` : ''}
+      <button class="btn primary" data-close>OK</button>`);
+    route();
+  }
+}
+
+/** Profil cardiaque Garmin (FC max, repos, seuil), rafraîchi une fois par jour. */
+async function refreshHr(force = false) {
+  if (!garminOn()) return;
+  if (!force && state.hr?.at === today()) return;
+  try {
+    const hr = await api(state.garmin, 'GET', '/garmin/profile');
+    state.hr = { ...hr, at: today() };
+    persist();
+  } catch { /* non bloquant */ }
+}
+
 let syncing = false;
 async function syncActivities(force) {
   if (!garminOn() || syncing) return;
   if (!force && Date.now() - state.lastSync < 10 * 60 * 1000) return;
   syncing = true;
+  await refreshHr();
   try {
     const start = addDays(today(), -21) > state.plan.weeks[0].start ? addDays(today(), -21) : addDays(state.plan.weeks[0].start, -7);
     const { activities } = await api(state.garmin, 'GET', `/activities?start=${start}&end=${today()}`);
@@ -364,8 +446,13 @@ function garminProfileCard() {
       <p class="error"></p><button class="btn primary" type="submit">Valider le code</button></form>
       <button class="btn ghost" id="g-forget">Changer de serveur</button></section>`;
   }
+  const hr = state.hr;
   return `<section class="card"><h2>⌚ Montre Garmin</h2><p>Connecté${g.name ? ` : <strong>${esc(g.name)}</strong>` : ''} ✓</p>
-    <p class="muted small">Les séances envoyées apparaissent dans le calendrier Garmin Connect puis sur ta montre à la prochaine synchronisation.</p>
+    ${hr?.maxHr ? `<p class="muted">Profil cardiaque Garmin : FC max ${hr.maxHr}${hr.restHr ? ` · repos ${hr.restHr}` : ''}${hr.lthr ? ` · seuil ${hr.lthr}` : ''} bpm. Il sert à juger si tes footings sont vraiment faciles.</p>`
+      : '<p class="muted">Profil cardiaque pas encore récupéré (FC max / repos) : il le sera à la prochaine synchronisation.</p>'}
+    <p class="muted small">Les séances des 9 prochains jours partent automatiquement sur ta montre. Chaque lundi, l'app fait le bilan de ta semaine (allure, cœur, ressenti) et ajuste la suite.</p>
+    <p class="muted small">Sauvegarde serveur : ${state.lastBackup ? new Date(state.lastBackup).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) + ' ✓' : 'en attente'}</p>
+    <button class="btn ghost" id="g-restore">Restaurer depuis le serveur</button>
     <button class="btn ghost" id="g-forget">Déconnecter</button></section>`;
 }
 
@@ -378,6 +465,7 @@ function bindGarminProfile() {
     try {
       const st = await api(cfg, 'GET', '/garmin/status');
       state.garmin = { ...cfg, connected: st.connected, name: st.name };
+      refreshHr(true);
       persist();
       renderProfile();
     } catch (ex) { err(f, ex.message); }
@@ -394,6 +482,7 @@ function bindGarminProfile() {
       state.garmin = { ...state.garmin, connected: true, name: r.name };
       persist();
       toast('Compte Garmin connecté ⌚');
+      refreshHr(true);
       renderProfile();
     } catch (ex) { err(f, ex.message); } finally { btn.disabled = false; btn.textContent = 'Connecter mon compte'; }
   });
@@ -450,7 +539,7 @@ function moveToToday(id) {
 }
 
 function doAdapt(newRace = null) {
-  const { plan, adjustment } = adaptPlan(state.plan, state.log, today(), newRace);
+  const { plan, adjustment } = adaptPlan(state.plan, state.log, today(), newRace, state.hr);
   state.plan = plan;
   persist();
   refreshPushed();
@@ -551,6 +640,7 @@ function renderSession(id) {
     state.log[id] = { done: true, feel, actualKm: s.optional ? undefined : Number(form.km.value) || s.km, note: form.note.value.trim() || undefined, at: t };
     persist();
     if (s.type === 'race') askRaceResult(s);
+    else if (s.type === 'test') askTestResult(s);
     else { toast('Séance enregistrée 💪'); history.back(); }
   });
   view.querySelector('[data-move]')?.addEventListener('click', () => moveToToday(id));
@@ -573,6 +663,44 @@ function renderSession(id) {
     persist();
     renderSession(id);
   });
+}
+
+/** Résultat du test 6 min : distance en mètres → VMA (km/h = m / 100) → recalibrage. */
+function askTestResult(s, prefill = null) {
+  showSheet(`<h2>Résultat du test</h2>
+    <p class="muted">${prefill ? 'Distance lue sur ta montre (tour de 6 minutes). Corrige-la si besoin.' : 'Distance parcourue pendant les 6 minutes (affichée sur ta montre).'}</p>
+    <form id="tf"><label class="field">Distance en mètres<input type="number" inputmode="numeric" name="m" min="500" max="2600" value="${prefill ?? ''}" placeholder="ex. 1250" required></label>
+    <p class="error"></p><button class="btn primary" type="submit">Recalibrer mes allures</button>
+    <button class="btn" type="button" data-close>Plus tard</button></form>`, (sheet) => {
+    sheet.querySelector('#tf').addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      const m = Number(ev.currentTarget.m.value);
+      if (!(m >= 500 && m <= 2600)) { sheet.querySelector('.error').textContent = 'Entre 500 et 2 600 m : vérifie la saisie.'; return; }
+      state.log[s.id] = { ...state.log[s.id], testDistanceM: m };
+      persist();
+      closeSheet();
+      toast(`VMA estimée : ${(m / 100).toFixed(1).replace('.', ',')} km/h`);
+      doAdapt({ distanceM: m, timeSec: 360 });
+    });
+  });
+}
+
+/** Test fait avec la montre : on lit le tour de 6 minutes dans l'activité Garmin. */
+async function detectTestResults() {
+  if (!garminOn()) return;
+  const todo = allSessions().filter((s) => s.type === 'test' && state.log[s.id]?.source === 'garmin' && state.log[s.id]?.garminId && !state.log[s.id].testDistanceM && !state.log[s.id].testAsked);
+  for (const s of todo) {
+    state.log[s.id].testAsked = true;
+    persist();
+    let best = null;
+    try {
+      const { laps } = await api(state.garmin, 'GET', `/activities/${state.log[s.id].garminId}/laps`);
+      best = laps.filter((l) => l.durationSec >= 330 && l.durationSec <= 390).sort((a, b) => b.distanceM - a.distanceM)[0];
+    } catch { /* on demandera la distance à la main */ }
+    const m = best ? Math.round(best.distanceM * 360 / best.durationSec) : null;
+    askTestResult(s, m);
+    return; // une feuille à la fois
+  }
 }
 
 function askRaceResult(s) {
@@ -614,16 +742,19 @@ function renderProfile() {
     ${garminProfileCard()}
     <section class="card">
       <h2>Données</h2>
-      <p class="muted">Tout est stocké sur ton téléphone. Exporte une sauvegarde de temps en temps.</p>
+      <p class="muted">${state.garmin?.url ? 'Ton plan est sauvegardé automatiquement sur ton serveur (20 dernières versions). L\'export reste possible en complément.' : 'Tout est stocké sur ton téléphone. Exporte une sauvegarde de temps en temps.'}</p>
       <div class="actions wrap">
         <button class="btn" id="export">Exporter</button>
         <label class="btn">Importer<input type="file" accept="application/json" id="import" hidden></label>
         <button class="btn" id="redo">Refaire le questionnaire</button>
       </div>
     </section>
-    <p class="muted center small">Run Coach · v0.8</p>`;
+    <p class="muted center small">Run Coach · v0.10</p>`;
 
   bindGarminProfile();
+  view.querySelector('#g-restore')?.addEventListener('click', () => {
+    if (confirm('Remplacer le plan de ce téléphone par la dernière sauvegarde du serveur ?')) restoreSheet();
+  });
   view.querySelector('#new-race').addEventListener('click', () => {
     showSheet(`<h2>Nouveau chrono</h2><form id="nr">
       <div class="choices">${[[5000, '5 km'], [10000, '10 km'], [21097, 'Semi'], [42195, 'Marathon']].map(([m, l]) => `<label class="choice small"><input type="radio" name="d" value="${m}"><span>${l}</span></label>`).join('')}</div>

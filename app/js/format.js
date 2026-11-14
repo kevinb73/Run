@@ -47,7 +47,7 @@ export const ZONES = {
 export const KIND_LABEL = { warmup: 'Échauffement', cooldown: 'Retour au calme', recovery: 'Récupération', run: 'Course' };
 
 export const TYPE_ICON = {
-  easy: '○', long: '◎', threshold: '▲', intervals: '◆', hills: '⛰', fartlek: '≈', 'race-pace': '◉', race: '★',
+  easy: '○', long: '◎', threshold: '▲', intervals: '◆', hills: '⛰', fartlek: '≈', 'race-pace': '◉', race: '★', test: '⏱',
 };
 
 export function stepDuration(dur) {
