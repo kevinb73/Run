@@ -24,13 +24,18 @@ function normalize(st) {
 /** Nouveau plan : on garde la connexion Garmin, on retire de la montre les séances de l'ancien plan. */
 function resetPlan(plan) {
   const old = state;
-  state = normalize({ garmin: old.garmin, plan, log: {} });
+  // On garde ce qui ne dépend pas du plan : profil cardiaque, activités (charge), dernière synchro des activités connues.
+  state = normalize({ garmin: old.garmin, plan, log: {}, hr: old.hr, acts: old.acts, known: old.known });
   if (old.garmin?.connected) {
-    for (const [id, info] of Object.entries(old.pushed ?? {})) {
-      if (info.date >= today()) api(old.garmin, 'DELETE', `/workouts/${encodeURIComponent(id)}`).catch(() => {});
-    }
+    const ids = Object.entries(old.pushed ?? {}).filter(([, info]) => info.date >= today()).map(([id]) => id);
+    // Les nouvelles séances portent souvent les mêmes identifiants : on attend la fin du nettoyage
+    // avant tout nouvel envoi, sinon une suppression tardive effacerait la séance tout juste envoyée.
+    cleanup = (async () => {
+      for (const id of ids) await api(old.garmin, 'DELETE', `/workouts/${encodeURIComponent(id)}`).catch(() => {});
+    })();
   }
 }
+let cleanup = Promise.resolve();
 let draft = state.plan ? { ...defaultDraft(), ...state.plan.profile } : defaultDraft();
 let stepIdx = 0;
 
@@ -535,6 +540,7 @@ let pushing = false;
 /** Envoie sur la montre les séances des 8 prochains jours qui n'y sont pas encore (silencieux si rien à faire). */
 async function pushWeek({ silent = false } = {}) {
   if (!garminOn() || pushing) return;
+  await cleanup;
   const soon = toPush(today()).filter((s) => state.pushed[s.id]?.date !== s.date);
   if (!soon.length) return;
   pushing = true;
@@ -1049,7 +1055,7 @@ function renderProfile() {
         <button class="btn" id="redo">Refaire le questionnaire</button>
       </div>
     </section>
-    <p class="muted center small">Run Coach · v0.13</p>`;
+    <p class="muted center small">Run Coach · v0.14</p>`;
 
   bindGarminProfile();
   view.querySelector('#g-restore')?.addEventListener('click', () => {

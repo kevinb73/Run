@@ -71,8 +71,11 @@ export function applyActivities(plan, log, activities, known) {
   const notices = [];
   const all = () => p.weeks.flatMap((w) => w.sessions);
 
+  // Une activité antérieure au plan (ou à sa création) ne doit jamais cocher une séance du plan.
+  const planStart = [p.weeks[0]?.start, p.createdAt].filter(Boolean).sort().at(-1) ?? '';
   for (const a of [...activities].sort((x, y) => (x.start ?? '').localeCompare(y.start ?? ''))) {
     if (!a?.id || newKnown[a.id] || !a.date) continue;
+    if (a.date < planStart) { newKnown[a.id] = 'pre-plan'; continue; }
     const pending = (s) => isRun(s) && !(newLog[s.id]?.done && newLog[s.id]?.source === 'garmin') && !newLog[s.id]?.replacedBy;
     const sportDay = (kind) => all().find((s) => s.type === 'sport' && s.date === a.date && (!kind || s.sport === kind) && !newLog[s.id]?.done);
 

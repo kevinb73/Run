@@ -85,14 +85,19 @@ def _convert(steps: list[dict[str, Any]], c: _Counter, child_id: int | None) -> 
             continue
         type_id, type_key = STEP_TYPES.get(st["kind"], (StepType.OTHER, "other"))
         # Échauffement / retour au calme / marche : pas d'alerte d'allure (inutile et agaçant).
-        with_target = st["kind"] in ("run",) and st.get("zone") not in (None, "walk")
+        # Accélérations (R) : à la sensation, pas de cible. Endurance (E) : seule l'alerte « trop vite » compte,
+        # on élargit donc la borne lente (+90 s/km) pour ne jamais pousser à accélérer un footing.
+        with_target = st["kind"] in ("run",) and st.get("zone") not in (None, "walk", "R")
+        pace = st.get("pace")
+        if with_target and pace and st.get("zone") == "E":
+            pace = [pace[0], pace[1] + 90]
         step = ExecutableStep(
             stepOrder=c.next(),
             stepType={"stepTypeId": type_id, "stepTypeKey": type_key},
             childStepId=child_id,
             description=(st.get("note") or None),
             **_end_condition(st["dur"]),
-            **_pace_target(st.get("pace") if with_target else None),
+            **_pace_target(pace if with_target else None),
         )
         out.append(step)
     return out

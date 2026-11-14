@@ -374,3 +374,12 @@ test('récap : chiffres, prévu/réalisé, étapes et conclusion', async () => {
   const r3 = buildRecap(easy, { done: true, feel: 'hard', actualKm: 2 }, { paces: w.paces });
   assert.ok(r3.conclusion.length >= 2);
 });
+
+test('import : une course antérieure au plan ne coche jamais une séance du plan', async () => {
+  const { applyActivities } = await import('../app/js/engine/garminsync.js');
+  const plan = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, easyPaceSec: 510, days: [0, 3, 6], longRunDay: 6 }, { today: TODAY });
+  const r = applyActivities(plan, {}, [{ id: 1, date: '2026-11-13', start: '2026-11-13 18:00', type: 'running', distanceKm: 4.5, durationSec: 2400 }], {});
+  assert.equal(Object.keys(r.log).length, 0);
+  assert.equal(r.freeRuns.length, 0);
+  assert.equal(r.known[1], 'pre-plan');
+});
