@@ -87,6 +87,21 @@ class ConversionTest(unittest.TestCase):
             self.assertEqual(orders, list(range(1, len(orders) + 1)), f"ordre des étapes {s['title']}")
 
 
+class TargetTest(unittest.TestCase):
+    def test_easy_run_never_pushes_to_speed_up(self):
+        s = {"id": "x", "date": "2026-11-16", "title": "Footing", "min": 40, "steps": [
+            {"kind": "run", "dur": {"type": "distance", "m": 4000}, "zone": "E", "pace": [476, 544], "note": ""},
+            {"kind": "repeat", "times": 5, "steps": [
+                {"kind": "run", "dur": {"type": "time", "s": 20}, "zone": "R", "pace": [366, 374], "note": ""},
+                {"kind": "recovery", "dur": {"type": "time", "s": 60}, "zone": None, "pace": None, "note": ""}]}]}
+        steps = session_to_workout(s)["workoutSegments"][0]["workoutSteps"]
+        easy = steps[0]
+        self.assertAlmostEqual(1000 / easy["targetValueTwo"], 476, delta=1)  # borne rapide inchangée
+        self.assertAlmostEqual(1000 / easy["targetValueOne"], 544 + 90, delta=1)  # borne lente élargie
+        stride = steps[1]["workoutSteps"][0]
+        self.assertEqual(stride["targetType"]["workoutTargetTypeKey"], "no.target")
+
+
 class ApiTest(unittest.TestCase):
     def setUp(self):
         self.fake = FakeGarmin()
