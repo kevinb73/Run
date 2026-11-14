@@ -31,6 +31,4 @@ npm run serve     # http://localhost:8080
 
 ## Feuille de route
 
-- [ ] **Garmin** : serveur Python (bibliothèque `garminconnect`) pour envoyer les séances sur la montre et récupérer les activités terminées.
-- [ ] Rapprochement automatique activité Garmin ↔ séance prévue, adaptation à partir des données réelles (allure, FC).
-- [ ] Zones cardiaques, gestion blessure / pause, plusieurs objectifs.
+Voir **[ROADMAP.md](ROADMAP.md)** : validation terrain, esthétique, coach ChatGPT (MCP), prévention, confort.
