@@ -434,3 +434,16 @@ test('pause : une séance déjà faite le jour même est conservée', async () =
   const { plan: p2 } = pausePlan(plan, log, '2026-11-17', 3, 'injury');
   assert.ok(p2.weeks.flatMap((w) => w.sessions).some((s) => s.id === tue.id), 'historique conservé');
 });
+
+test('petite base (sortie max 3 km) : on part du niveau réel, progression douce', () => {
+  const plan = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, weeklyKm: 5, longestRunKm: 3, easyPaceSec: 570 }, { today: TODAY });
+  const runs = (w) => w.sessions.filter((s) => s.km);
+  const w0 = runs(plan.weeks[0]);
+  assert.ok(Math.max(...w0.map((s) => s.min)) <= 32, 'semaine 1 : aucune séance > 32 min');
+  let prev = 0;
+  for (const w of plan.weeks.slice(0, 7)) {
+    const long = Math.max(...runs(w).map((s) => s.km));
+    if (prev) assert.ok(long <= prev * 1.25 + 0.6, `sortie longue ${prev} → ${long}`);
+    prev = Math.max(prev, long); // une semaine allégée ne remet pas la rampe à zéro
+  }
+});
