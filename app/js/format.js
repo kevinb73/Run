@@ -54,3 +54,6 @@ export function stepDuration(dur) {
   if (dur.type === 'distance') return dur.m >= 1000 ? `${+(dur.m / 1000).toFixed(2)} km` : `${dur.m} m`;
   return duration(dur.s);
 }
+
+/** Durée approximative en minutes → « 45 min » ou « 1h05 ». */
+export const hm = (min) => (min >= 60 ? `${Math.floor(min / 60)}h${String(Math.round(min % 60)).padStart(2, '0')}` : `${Math.round(min)} min`);

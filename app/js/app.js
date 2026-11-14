@@ -1,19 +1,23 @@
 import * as store from './store.js';
 import { generatePlan, PHASES, FITNESS_GOALS, SPORTS } from './engine/plan.js';
 import { adaptPlan, recentStats, currentWeek } from './engine/adapt.js';
-import { canMoveToToday, moveSession, downgradeToEasy } from './engine/reschedule.js';
+import { canMoveToToday, moveSession, downgradeToEasy, findSafeDay, missedKeySession, makeUp, shortenEasy, HARD_TYPES } from './engine/reschedule.js';
 import { applyActivities } from './engine/garminsync.js';
+import { analyzeSession, applyVerdict, QUALITY_TYPES } from './engine/analysis.js';
+import { loadStatus, activityLoad, LOAD_LABELS } from './engine/load.js';
+import { readinessAdvice, formClass, LEVEL_FR, HRV_FR } from './engine/readiness.js';
 import { api, sessionPayload } from './garmin.js';
+import { lineChart, volumeChart as weeklyVolumeChart, progressData } from './progress.js';
 import { vdotFromPerformance, predictTime } from './engine/vdot.js';
 import { todayISO, daysBetween, addDays, mondayOf } from './engine/dates.js';
 import { visibleSteps, defaultDraft } from './onboarding.js';
-import { esc, pace, paceRange, duration, dateLong, dateShort, dateFull, ZONES, TYPE_ICON, stepDuration, KIND_LABEL } from './format.js';
+import { esc, pace, paceRange, duration, dateLong, dateShort, dateFull, ZONES, TYPE_ICON, stepDuration, KIND_LABEL, hm } from './format.js';
 
 let state = normalize(store.load());
 
 /** Champs ajoutés au fil des versions (Garmin) : valeurs par défaut. */
 function normalize(st) {
-  return { garmin: null, pushed: {}, known: {}, freeRuns: [], lastSync: 0, ...st };
+  return { garmin: null, pushed: {}, known: {}, freeRuns: [], acts: {}, coachNotes: [], lastSync: 0, ...st };
 }
 
 /** Nouveau plan : on garde la connexion Garmin, on retire de la montre les séances de l'ancien plan. */
@@ -111,6 +115,7 @@ function route() {
     case 'plan': return renderPlan(arg);
     case 'session': return renderSession(arg);
     case 'profile': return renderProfile();
+    case 'progress': return renderProgress();
     default: return renderToday();
   }
 }
@@ -195,6 +200,9 @@ function newCycle() {
   route();
 }
 
+/** Remplace les dates ISO d'un texte par « sam. 31 oct. ». */
+const frDates = (txt) => String(txt).replace(/\d{4}-\d{2}-\d{2}/g, (d) => dateShort(d));
+
 const iconOf = (s) => (s.type === 'sport' ? SPORTS[s.sport]?.icon : TYPE_ICON[s.type]) ?? '•';
 
 // ---------------- Aujourd'hui ----------------
@@ -207,7 +215,7 @@ function sessionCard(s, { big = false } = {}) {
     <span class="body">
       <span class="date">${esc(big ? dateLong(s.date) : dateShort(s.date))}</span>
       <span class="title">${esc(s.title)}</span>
-      <span class="meta">${s.optional ? 'Facultatif' : `${s.km} km · ~${duration(s.min * 60)}`}${s.alt ? ` · ou ${SPORTS[s.alt].icon} ${SPORTS[s.alt].label.toLowerCase()}` : ''}</span>
+      <span class="meta">${s.optional ? 'Facultatif' : `${s.km} km · ~${hm(s.min)}`}${s.alt ? ` · ou ${SPORTS[s.alt].icon} ${SPORTS[s.alt].label.toLowerCase()}` : ''}</span>
     </span>${status}</a>`;
 }
 
@@ -218,7 +226,8 @@ function renderToday() {
   const upcoming = allSessions().filter((s) => s.date >= t && !s.optional && !state.log[s.id]?.done && !state.log[s.id]?.skipped);
   const next = upcoming[0];
   const week = currentWeek(p, t);
-  const missed = allSessions().filter((s) => s.date < t && !s.optional && !state.log[s.id]).slice(-3);
+  const makeup = missedKeySession(p, state.log, t);
+  const missed = allSessions().filter((s) => s.date < t && !s.optional && !state.log[s.id] && s.id !== makeup?.id).slice(-3);
   const stats = recentStats(p, state.log, t);
 
   let weekBlock = '';
@@ -254,7 +263,11 @@ function renderToday() {
     ${next ? `<h2 class="section-title">${next.date === t ? 'Aujourd\'hui' : 'Prochaine séance'}</h2>${sessionCard(next, { big: true })}
       ${canMoveToToday(next, state.log, t) ? `<button class="btn ghost move-today" data-move="${next.id}">↻ Faire cette séance aujourd'hui</button>` : ''}` : finished}
     ${missed.length ? `<section class="card warn"><p><strong>${missed.length} séance(s) passée(s) sans retour.</strong> Indique si tu les as faites : c'est ce qui permet d'adapter le plan.</p>${missed.map((s) => sessionCard(s)).join('')}</section>` : ''}
+    ${readinessBlock(t, next)}
+    ${makeupBlock(t, makeup)}
     ${feelPrompt(t)}
+    ${coachBlock(t)}
+    ${loadBlock(t)}
     ${garminTodayBlock(t)}
     ${weekBlock}
     ${stats.done >= 3 && p.profile.fitnessGoal !== 'restart' ? `<section class="card"><h2>Coach</h2><p class="muted">Sur 14 jours : ${Math.round((stats.completion ?? 0) * 100)} % des séances faites, ${Math.round(stats.hardShare * 100)} % ressenties dures.</p>
@@ -268,10 +281,196 @@ function renderToday() {
     state.log[id] = { ...state.log[id], feel };
     persist();
     renderToday();
+    analyzePending();
   }));
+  bindCoachBlocks(t, next, makeup);
   view.querySelector('#push-week')?.addEventListener('click', () => pushWeek());
   view.querySelector('#sync-now')?.addEventListener('click', () => syncActivities(true));
-  syncActivities(false).then(() => { weeklyCoach(); detectTestResults(); return pushWeek({ silent: true }); });
+  syncActivities(false).then(async () => {
+    weeklyCoach();
+    detectTestResults();
+    await analyzePending();
+    await refreshReadiness(next);
+    return pushWeek({ silent: true });
+  });
+}
+
+// ---------------- Coach : analyse, forme du jour, charge, rattrapage ----------------
+
+const VERDICT = {
+  success: { label: 'Réussie', icon: '✓', cls: 'ok' },
+  hard: { label: 'Trop dure', icon: '↓', cls: 'bad' },
+  easy: { label: 'Trop facile', icon: '↑', cls: 'up' },
+  fast: { label: 'Trop rapide', icon: '⚠', cls: 'bad' },
+  unknown: { label: 'Sans analyse', icon: '·', cls: '' },
+};
+
+function analysisCard(a) {
+  if (!a) return '';
+  const v = VERDICT[a.verdict] ?? VERDICT.unknown;
+  return `<section class="card"><div class="row between"><h2>Analyse</h2><span class="verdict ${v.cls}">${v.icon} ${v.label}</span></div>
+    <ul class="adj">${a.details.map((d) => `<li>${esc(d)}</li>`).join('')}</ul>${a.note ? `<p class="muted">${esc(a.note)}</p>` : ''}</section>`;
+}
+
+function weekOf(date) {
+  return state.plan.weeks.find((w) => w.start <= date && date < addDays(w.start, 7));
+}
+
+/** Analyse les séances faites (avec ressenti) et ajuste la suivante du même type. */
+let analyzing = false;
+async function analyzePending() {
+  if (analyzing) return;
+  analyzing = true;
+  const t = today();
+  let changed = false;
+  try {
+    const todo = allSessions().filter((s) => {
+      const e = state.log[s.id];
+      return e?.done && !e.replacedBy && !e.analysis && e.feel && s.date >= addDays(t, -10) && s.type !== 'sport' && s.type !== 'race';
+    });
+    for (const s of todo) {
+      const e = state.log[s.id];
+      let laps = null;
+      if (garminOn() && e.garminId && (QUALITY_TYPES.includes(s.type) || s.type === 'long')) {
+        try { ({ laps } = await api(state.garmin, 'GET', `/activities/${e.garminId}/laps`)); } catch { /* analyse au ressenti */ }
+      }
+      const a = analyzeSession(s, e, laps, weekOf(s.date)?.paces);
+      const r = applyVerdict(state.plan, state.log, s.id, a.verdict);
+      if (r.note) {
+        state.plan = r.plan;
+        const next = allSessions().filter((x) => x.adjustedFrom && x.type === s.type && x.date > s.date)[0];
+        if (next) repushIfNeeded([next.id]);
+      }
+      state.log[s.id] = { ...e, analysis: { verdict: a.verdict, details: a.details, note: r.note, source: a.source } };
+      state.coachNotes = [{ date: s.date, id: s.id }, ...state.coachNotes.filter((n) => n.id !== s.id)].slice(0, 6);
+      changed = true;
+    }
+  } finally {
+    analyzing = false;
+  }
+  if (changed) { persist(); if (location.hash === '' || location.hash === '#/') renderToday(); }
+}
+
+function coachBlock(t) {
+  const notes = state.coachNotes.filter((n) => n.date >= addDays(t, -7)).map((n) => ({ s: findSession(n.id), a: state.log[n.id]?.analysis })).filter((x) => x.s && x.a);
+  if (!notes.length) return '';
+  return `<section class="card"><h2>Analyse de tes séances</h2>${notes.map(({ s, a }) => {
+    const v = VERDICT[a.verdict] ?? VERDICT.unknown;
+    return `<a class="coach-row" href="#/session/${s.id}"><span class="verdict ${v.cls}">${v.icon} ${v.label}</span>
+      <span><strong>${esc(s.title)}</strong> <span class="muted">· ${esc(dateShort(s.date))}</span><small>${esc(frDates(a.note ?? a.details[0] ?? ''))}</small></span></a>`;
+  }).join('')}</section>`;
+}
+
+const currentLoad = () => loadStatus(Object.values(state.acts), today(), state.hr);
+
+function loadBlock(t) {
+  if (!garminOn() || !Object.keys(state.acts).length) return '';
+  const l = currentLoad();
+  const pct = l.ratio ? Math.min(100, (l.ratio / 2) * 100) : 0;
+  const warn = l.zone === 'high' || l.zone === 'elevated';
+  const nextHard = allSessions().find((s) => HARD_TYPES.includes(s.type) && s.date >= t && s.date <= addDays(t, 3) && !state.log[s.id]);
+  return `<section class="card ${l.zone === 'high' ? 'warn' : ''}"><div class="row between"><h2>Charge d'entraînement</h2>
+      <span class="muted small">course + futsal + arbitrage</span></div>
+    ${l.ratio == null ? `<p class="muted">7 derniers jours : ${Math.round(l.acute)}. Le ratio semaine / mois sera fiable après 2 semaines de données.</p>`
+      : `<div class="load-gauge"><div class="zone-ok"></div><span style="left:${pct}%"></span></div>
+      <p>Ratio semaine / mois : <strong>${String(l.ratio).replace('.', ',')}</strong> · ${LOAD_LABELS[l.zone]}</p>
+      <p class="muted small">7 jours : ${Math.round(l.acute)} · moyenne hebdo du mois : ${l.chronic}. Zone optimale : 0,8 à 1,3.</p>`}
+    ${warn && nextHard ? `<p>${l.zone === 'high' ? '⚠️ Charge trop élevée : risque de blessure accru.' : 'Charge élevée.'} Tu peux transformer « ${esc(nextHard.title)} » (${esc(dateShort(nextHard.date))}) en footing.</p>
+      <button class="btn" id="load-ease" data-id="${nextHard.id}">Alléger cette séance</button>` : ''}</section>`;
+}
+
+async function refreshReadiness(next) {
+  const t = today();
+  if (!garminOn() || !next || next.date !== t || state.readiness?.date === t) return;
+  try {
+    const r = await api(state.garmin, 'GET', `/readiness?day=${t}`);
+    state.readiness = { date: t, data: r, handled: false };
+    persist();
+    if (formClass(r) && (location.hash === '' || location.hash === '#/')) renderToday();
+  } catch { /* non bloquant */ }
+}
+
+function readinessBlock(t, next) {
+  const rd = state.readiness;
+  if (!rd || rd.date !== t || !next || next.date !== t) return '';
+  const r = rd.data;
+  const advice = readinessAdvice(r, next);
+  if (!advice) return '';
+  const bits = [r.score != null ? `disponibilité ${r.score}/100 (${LEVEL_FR[r.level] ?? '—'})` : null,
+    r.hrvStatus ? `VFC ${HRV_FR[r.hrvStatus] ?? r.hrvStatus.toLowerCase()}` : null,
+    r.sleepScore != null ? `sommeil ${r.sleepScore}/100` : null,
+    r.recoveryHours ? `récupération restante ${r.recoveryHours} h` : null].filter(Boolean);
+  const actions = rd.handled ? '' : advice.action === 'swap' || advice.action === 'suggest'
+    ? `<div class="actions"><button class="btn ghost" id="rd-keep">Garder</button><button class="btn primary" id="rd-ease">Alléger</button></div>`
+    : advice.action === 'shorten' ? `<div class="actions"><button class="btn ghost" id="rd-keep">Garder</button><button class="btn primary" id="rd-short">Raccourcir</button></div>` : '';
+  return `<section class="card ${advice.action === 'swap' ? 'warn' : ''}"><h2>Forme du jour</h2>
+    <p class="muted">${esc(bits.join(' · '))}</p><p>${esc(advice.text)}</p>${actions}</section>`;
+}
+
+function makeupBlock(t, m) {
+  if (!m) return '';
+  const target = findSafeDay(state.plan, state.log, m.id, addDays(t, -1));
+  return `<section class="card warn"><h2>Séance clé manquée</h2>
+    <p><strong>${esc(m.title)}</strong> (${esc(dateLong(m.date))}) n'a pas été faite.</p>
+    ${target ? `<p class="muted">Je peux la replacer le <strong>${esc(dateLong(target.date))}</strong> à la place du footing, sans la coller à une autre séance dure ni au lendemain d'un futsal.</p>
+      <div class="actions"><button class="btn ghost" data-mk-drop="${m.id}">La laisser tomber</button><button class="btn primary" data-mk-do="${m.id}:${target.id}">La replacer</button></div>`
+      : `<p class="muted">Pas de jour sûr d'ici la fin de la semaine : mieux vaut la laisser tomber que surcharger. On reprend le plan normalement.</p>
+      <button class="btn" data-mk-drop="${m.id}">OK</button>`}</section>`;
+}
+
+function bindCoachBlocks(t, next) {
+  view.querySelector('[data-mk-do]')?.addEventListener('click', async (ev) => {
+    const [id, targetId] = ev.currentTarget.dataset.mkDo.split(':');
+    const { plan, dropped } = makeUp(state.plan, state.log, id, targetId);
+    state.plan = plan;
+    state.log[dropped] = { skipped: true, reason: 'rattrapage', at: t };
+    persist();
+    if (state.pushed[dropped] && garminOn()) {
+      api(state.garmin, 'DELETE', `/workouts/${encodeURIComponent(dropped)}`).catch(() => {});
+      delete state.pushed[dropped];
+    }
+    toast('Séance replacée.');
+    renderToday();
+    pushWeek({ silent: true });
+  });
+  view.querySelector('[data-mk-drop]')?.addEventListener('click', (ev) => {
+    state.log[ev.currentTarget.dataset.mkDrop] = { skipped: true, at: t };
+    persist();
+    renderToday();
+  });
+  view.querySelector('#rd-keep')?.addEventListener('click', () => { state.readiness.handled = true; persist(); renderToday(); });
+  view.querySelector('#rd-ease')?.addEventListener('click', () => {
+    const target = findSafeDay(state.plan, state.log, next.id, t);
+    if (target) {
+      const { plan } = moveSession(state.plan, next.id, target.date, state.log);
+      state.plan = plan;
+      toast(`Footing aujourd'hui, « ${next.title} » décalée au ${dateShort(target.date)}.`);
+      repushIfNeeded([next.id, target.id]);
+    } else {
+      state.plan = downgradeToEasy(state.plan, next.id);
+      toast('Séance transformée en footing.');
+      repushIfNeeded([next.id]);
+    }
+    state.readiness.handled = true;
+    persist();
+    renderToday();
+  });
+  view.querySelector('#rd-short')?.addEventListener('click', () => {
+    state.plan = shortenEasy(state.plan, next.id);
+    state.readiness.handled = true;
+    persist();
+    repushIfNeeded([next.id]);
+    toast('Footing raccourci.');
+    renderToday();
+  });
+  view.querySelector('#load-ease')?.addEventListener('click', (ev) => {
+    const id = ev.currentTarget.dataset.id;
+    state.plan = downgradeToEasy(state.plan, id);
+    persist();
+    repushIfNeeded([id]);
+    toast('Séance transformée en footing.');
+    renderToday();
+  });
 }
 
 // ---------------- Garmin ----------------
@@ -302,7 +501,7 @@ function garminTodayBlock(t) {
     ${missing ? `<p class="muted">${missing} séance(s) des 9 prochains jours pas encore sur ta montre.</p><button class="btn primary" id="push-week">Envoyer sur ma montre</button>`
       : soon.length ? '<p class="muted">Les séances des 9 prochains jours sont sur ta montre ✓ (envoi automatique à chaque ouverture)</p>' : ''}
     <button class="btn ghost" id="sync-now">Récupérer mes courses</button>
-    ${state.syncNotices?.length ? `<ul class="adj">${state.syncNotices.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}</section>`;
+    ${state.syncNotices?.length ? `<ul class="adj">${state.syncNotices.map((n) => `<li>${esc(frDates(n))}</li>`).join('')}</ul>` : ''}</section>`;
 }
 
 async function pushSession(s) {
@@ -365,12 +564,12 @@ function weeklyCoach() {
   if (!garminOn() || p.profile.fitnessGoal === 'restart') return;
   if ((state.lastAutoAdapt ?? '') >= mondayOf(t) || t < addDays(p.weeks[0].start, 7)) return;
   state.lastAutoAdapt = mondayOf(t);
-  const { plan, adjustment } = adaptPlan(p, state.log, t, null, state.hr);
+  const { plan, adjustment } = adaptPlan(p, state.log, t, null, state.hr, currentLoad());
   state.plan = plan;
   persist();
   if (adjustment.changed || !adjustment.reasons[0].startsWith('Rien')) {
     refreshPushed();
-    showSheet(`<h2>Bilan de la semaine</h2><ul>${adjustment.reasons.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>
+    showSheet(`<h2>Bilan de la semaine</h2><ul>${adjustment.reasons.map((r) => `<li>${esc(frDates(r))}</li>`).join('')}</ul>
       ${adjustment.vdotAfter !== adjustment.vdotBefore ? `<p class="muted">Niveau : ${adjustment.vdotBefore} → ${adjustment.vdotAfter}</p>` : ''}
       <button class="btn primary" data-close>OK</button>`);
     route();
@@ -395,8 +594,15 @@ async function syncActivities(force) {
   syncing = true;
   await refreshHr();
   try {
-    const start = addDays(today(), -21) > state.plan.weeks[0].start ? addDays(today(), -21) : addDays(state.plan.weeks[0].start, -7);
+    // 35 jours au premier passage (charge chronique sur 28 jours), puis 21 jours.
+    const start = addDays(today(), Object.keys(state.acts).length ? -21 : -35);
     const { activities } = await api(state.garmin, 'GET', `/activities?start=${start}&end=${today()}`);
+    for (const a of activities) {
+      state.acts[a.id] = { id: a.id, date: a.date, type: a.type, name: a.name, distanceKm: a.distanceKm, durationSec: a.durationSec,
+        avgHr: a.avgHr, paceSecPerKm: a.paceSecPerKm, trainingLoad: a.trainingLoad, trainingEffect: a.trainingEffect };
+    }
+    const oldest = addDays(today(), -180);
+    for (const [id, a] of Object.entries(state.acts)) if (a.date < oldest) delete state.acts[id];
     const r = applyActivities(state.plan, state.log, activities, state.known);
     Object.assign(state, { plan: r.plan, log: r.log, known: r.known, lastSync: Date.now() });
     state.freeRuns = [...state.freeRuns, ...r.freeRuns];
@@ -539,7 +745,7 @@ function moveToToday(id) {
 }
 
 function doAdapt(newRace = null) {
-  const { plan, adjustment } = adaptPlan(state.plan, state.log, today(), newRace, state.hr);
+  const { plan, adjustment } = adaptPlan(state.plan, state.log, today(), newRace, state.hr, currentLoad());
   state.plan = plan;
   persist();
   refreshPushed();
@@ -607,13 +813,16 @@ function renderSession(id) {
     <a href="#/plan" class="back">‹ Plan</a>
     <p class="muted">${esc(dateLong(s.date))}</p>
     <h1>${esc(s.title)}</h1>
-    ${s.optional ? '<p class="big-meta">Facultatif</p>' : `<p class="big-meta">${s.km} km · ~${duration(s.min * 60)}</p>`}
+    ${s.optional ? '<p class="big-meta">Facultatif</p>' : `<p class="big-meta">${s.km} km · ~${hm(s.min)}</p>`}
     <p>${esc(s.description)}</p>
     ${s.alt ? `<section class="card alt-note"><p><strong>${SPORTS[s.alt].icon} Jour de ${SPORTS[s.alt].label.toLowerCase()} possible.</strong> Tu fais <strong>l'un ou l'autre</strong>, pas les deux. Si tu vas au ${SPORTS[s.alt].label.toLowerCase()}, indique-le ci-dessous : la séance sera comptée comme remplacée.</p></section>` : ''}
     ${s.steps.length ? stepsHTML(s.steps) : ''}
     ${canMoveToToday(s, state.log, t) ? `<button class="btn move-today" data-move="${s.id}">↻ Faire cette séance aujourd'hui</button>` : ''}
     ${s.movedFrom && s.movedFrom !== s.date ? `<p class="muted small">Déplacée (prévue initialement le ${esc(dateShort(s.movedFrom))}).</p>` : ''}
-    ${s.downgraded ? '<p class="muted small">Transformée en footing pour éviter deux séances dures d\'affilée.</p>' : ''}
+    ${s.downgraded ? '<p class="muted small">Transformée en footing (récupération ou charge trop élevée).</p>' : ''}
+    ${s.adjustedFrom ? `<p class="muted small">Ajustée après ta dernière séance du même type (prévue : « ${esc(s.adjustedFrom)} »).</p>` : ''}
+    ${s.shortened ? '<p class="muted small">Raccourcie : forme du jour basse.</p>' : ''}
+    ${analysisCard(state.log[s.id]?.analysis)}
     ${s.optional ? '' : garminSessionCard(s)}
     ${s.date <= t ? `<section class="card">
       <h2>Ton retour</h2>
@@ -641,7 +850,7 @@ function renderSession(id) {
     persist();
     if (s.type === 'race') askRaceResult(s);
     else if (s.type === 'test') askTestResult(s);
-    else { toast('Séance enregistrée 💪'); history.back(); }
+    else { toast('Séance enregistrée 💪'); analyzePending(); history.back(); }
   });
   view.querySelector('[data-move]')?.addEventListener('click', () => moveToToday(id));
   view.querySelector('#push-one')?.addEventListener('click', async (ev) => {
@@ -715,6 +924,54 @@ function askRaceResult(s) {
   });
 }
 
+// ---------------- Progrès ----------------
+
+function renderProgress() {
+  const t = today();
+  const d = progressData(state, t);
+  const lastVma = d.tests.at(-1);
+  const effDelta = d.eff.length >= 4
+    ? (d.eff.slice(-3).reduce((a, x) => a + x.y, 0) / 3) / (d.eff.slice(0, 3).reduce((a, x) => a + x.y, 0) / 3) - 1 : null;
+  view.innerHTML = `<h1>Progrès</h1>
+    <div class="tiles">
+      <div class="tile"><span class="tile-value">${d.regularity == null ? '—' : Math.round(d.regularity * 100) + ' %'}</span><span class="tile-label">séances faites</span></div>
+      <div class="tile"><span class="tile-value">${Math.round(d.totalKm)}</span><span class="tile-label">km courus</span></div>
+      <div class="tile"><span class="tile-value">${lastVma ? lastVma.vma.toFixed(1).replace('.', ',') : '—'}</span><span class="tile-label">VMA (km/h)</span></div>
+    </div>
+    <section class="card"><h2>Prédiction ${esc(d.distLabel)}</h2>
+      <p class="muted small">Recalculée à chaque test, chrono ou bilan. Plus haut = plus rapide.</p>
+      ${lineChart(d.level, { fmt: (v) => duration(v).replace(/'00$/, ''), invert: true, empty: 'La courbe apparaîtra après ton premier recalibrage (bilan du lundi, test ou chrono).' })}</section>
+    <section class="card"><h2>Efficacité en footing</h2>
+      <p class="muted small">Mètres parcourus par battement de cœur. Si ça monte, tu cours plus vite pour le même effort : ton endurance progresse.${effDelta != null ? ` <strong>${effDelta >= 0 ? '+' : ''}${Math.round(effDelta * 100)} %</strong> depuis tes premiers footings.` : ''}</p>
+      ${lineChart(d.eff, { fmt: (v) => v.toFixed(2).replace('.', ','), empty: 'Apparaîtra après quelques footings enregistrés avec ta montre (cardio).' })}</section>
+    <section class="card"><h2>Volume par semaine</h2>
+      <p class="muted small"><span class="key key-done"></span> réalisé · <span class="key key-plan"></span> prévu (km)</p>
+      ${weeklyVolumeChart(d.volume)}</section>
+    ${d.tests.length ? `<section class="card"><h2>Tests VMA</h2><ul class="adj">${d.tests.map((x) => `<li>${esc(dateShort(x.date))} : ${x.vma.toFixed(1).replace('.', ',')} km/h</li>`).join('')}</ul></section>` : ''}
+    <div id="chart-tip" class="chart-tip" hidden></div>`;
+  bindChartTips();
+}
+
+/** Valeur affichée au toucher (iPhone) ou au survol (ordinateur). */
+function bindChartTips() {
+  const tip = view.querySelector('#chart-tip');
+  const show = (g, ev) => {
+    tip.textContent = g.dataset.tip;
+    tip.hidden = false;
+    const r = view.getBoundingClientRect();
+    const x = Math.min(Math.max(ev.clientX - r.left, 80), r.width - 80);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${ev.clientY - r.top - 48}px`;
+    view.querySelectorAll('.pt.active').forEach((n) => n.classList.remove('active'));
+    g.classList.add('active');
+  };
+  view.querySelectorAll('.chart .pt').forEach((g) => {
+    g.addEventListener('pointerenter', (ev) => show(g, ev));
+    g.addEventListener('click', (ev) => show(g, ev));
+  });
+  view.querySelectorAll('.chart').forEach((c) => c.addEventListener('pointerleave', () => { tip.hidden = true; }));
+}
+
 // ---------------- Profil ----------------
 
 function renderProfile() {
@@ -749,7 +1006,7 @@ function renderProfile() {
         <button class="btn" id="redo">Refaire le questionnaire</button>
       </div>
     </section>
-    <p class="muted center small">Run Coach · v0.10</p>`;
+    <p class="muted center small">Run Coach · v0.12</p>`;
 
   bindGarminProfile();
   view.querySelector('#g-restore')?.addEventListener('click', () => {

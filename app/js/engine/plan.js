@@ -138,7 +138,7 @@ export function assignDays(days, longDay, nQuality, sportDays = []) {
   return { long: longDay, quality, easy };
 }
 
-function buildQuality(type, c, p) {
+export function buildQuality(type, c, p) {
   switch (type) {
     case 'hills': return W.hills(c, p);
     case 'fartlek': return W.fartlek(c, p);
@@ -332,7 +332,8 @@ export function generatePlan(profile, opts) {
 
       let pQ = recovery ? Math.max(0, p - 0.3) : phase === 'taper' ? 0.3 : p;
       if (level === 'beginner') pQ *= 0.5; // séances plus courtes pour un débutant
-      const quality = qTypes.map((t) => buildQuality(t, c, pQ));
+      // « level » = niveau de difficulté dans la progression du type de séance (0 → 1), ajustable selon la réussite.
+      const quality = qTypes.map((t) => ({ ...buildQuality(t, c, pQ), level: pQ }));
       // Semaine de test : le test remplace la séance de qualité (ou, à défaut, un footing placé loin du sport).
       let testOnEasy = null;
       if (i === testWeek) {
