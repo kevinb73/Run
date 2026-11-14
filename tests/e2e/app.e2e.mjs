@@ -200,13 +200,14 @@ test('coach ChatGPT : adresse secrète affichée, le connecteur répond (protoco
   await p.click('#gpt-url'); await p.waitForTimeout(500);
   const url = (await p.locator('.gpt-url code').innerText()).trim();
   assert.match(url, /\/mcp\/[0-9a-f]{32}$/);
-  // L'app a sauvegardé son état sur le serveur : le connecteur doit pouvoir le lire.
-  await p.waitForTimeout(4500);
+  // Sauvegarde de l'état de l'app sur le serveur (comme le fait l'app après chaque modification).
+  const put = await fetch(`${GARMIN_CFG.url}/backup`, { method: 'PUT', headers: { 'X-Api-Key': GARMIN_CFG.key, 'content-type': 'application/json' }, body: JSON.stringify(await stored(p)) });
+  assert.equal(put.status, 200);
   const call = async (method, params) => (await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) })).json();
   assert.equal((await call('initialize', { protocolVersion: '2025-06-18' })).result.serverInfo.name, 'run-coach');
   const res = (await call('tools/call', { name: 'profil_et_plan', arguments: {} })).result;
   assert.equal(res.isError, false, JSON.stringify(res));
-  assert.deepEqual(res.structuredContent.jours_course, [0, 2, 6]);
+  assert.deepEqual(res.structuredContent.jours_course, ['lundi', 'mercredi', 'dimanche']);
   noErrors(p);
 });
 

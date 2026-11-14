@@ -265,7 +265,10 @@ class McpTest(unittest.TestCase):
             self.assertEqual(json.loads(res["content"][0]["text"]), data)
             self.assertTrue(data["donnees_au"])
         plan = self.rpc("tools/call", {"name": "profil_et_plan", "arguments": {}})["result"]["structuredContent"]
-        self.assertEqual(plan["jours_course"], [0, 2, 6])
+        self.assertEqual(plan["jours_course"], ["lundi", "mercredi", "dimanche"])
+        self.assertEqual(plan["jour_sortie_longue"], "dimanche")
+        self.assertEqual(plan["sports_si_il_y_va"], [{"jour": "mercredi", "sport": "futsal"}, {"jour": "samedi", "sport": "arbitrage"}])
+        self.assertTrue(all(s["jour"] in ("lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche") for s in plan["prochaines_seances"]))
         self.assertTrue(plan["prochaines_seances"])
         rec = self.rpc("tools/call", {"name": "seances_recentes", "arguments": {"jours": 60}})["result"]["structuredContent"]
         done = [s for s in rec["seances_du_plan"] if s["statut"] == "faite"]

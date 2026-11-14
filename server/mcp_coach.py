@@ -44,6 +44,14 @@ def _week_of(st: dict, d: str) -> dict | None:
     return None
 
 
+JOURS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+SPORTS = {"futsal": "futsal", "referee": "arbitrage"}
+
+
+def _jour(d: str) -> str:
+    return JOURS[date.fromisoformat(d).weekday()]
+
+
 def _pace(sec: float | None) -> str | None:
     if not sec:
         return None
@@ -53,11 +61,11 @@ def _pace(sec: float | None) -> str | None:
 
 def _session_view(s: dict, e: dict | None) -> dict:
     e = e or {}
-    out = {"date": s["date"], "titre": s.get("title"), "type": s.get("type"), "prevu_km": s.get("km"), "prevu_min": s.get("min")}
+    out = {"date": s["date"], "jour": _jour(s["date"]), "titre": s.get("title"), "type": s.get("type"), "prevu_km": s.get("km"), "prevu_min": s.get("min")}
     if s.get("type") == "sport":
-        out["sport"] = s.get("sport")
+        out["sport"] = SPORTS.get(s.get("sport"), s.get("sport"))
     if s.get("alt"):
-        out["ou_sport"] = s["alt"]
+        out["ou_sport"] = SPORTS.get(s["alt"], s["alt"])
     if e.get("done"):
         out["statut"] = "remplacée par " + e["replacedBy"] if e.get("replacedBy") else "faite"
     elif e.get("skipped"):
@@ -92,8 +100,10 @@ def tool_profil_et_plan(st: dict, args: dict, today: str) -> dict:
     return {
         "objectif": plan.get("raceLabel"), "but": plan.get("goalText"), "mode": plan.get("mode"),
         "semaines": len(plan.get("weeks", [])), "debut": (plan.get("weeks") or [{}])[0].get("start"),
-        "jours_course": prof.get("days"), "jour_sortie_longue": prof.get("longRunDay"), "sports": prof.get("otherSports"),
-        "note_jours": "0 = lundi … 6 = dimanche",
+        "jours_course": [JOURS[d] for d in sorted(prof.get("days") or [])],
+        "jour_sortie_longue": JOURS[prof["longRunDay"]] if prof.get("longRunDay") is not None else None,
+        "sports_si_il_y_va": [{"jour": JOURS[x["day"]], "sport": SPORTS.get(x["kind"], x["kind"])} for x in sorted(prof.get("otherSports") or [], key=lambda x: x["day"])],
+        "note_jours": "Un jour qui est à la fois jour de course et de sport = « course OU sport » (l'un ou l'autre, pas les deux).",
         "renforcement": prof.get("strength") is not False,
         "semaine_en_cours": w and {"numero": w["index"] + 1, "debut": w["start"], "phase": w.get("phase"), "allegee": w.get("recovery"),
                                    "volume_km": w.get("volumeKm"), "seances": [_session_view(s, log.get(s["id"])) for s in w["sessions"]]},
@@ -110,7 +120,7 @@ def tool_seances_recentes(st: dict, args: dict, today: str) -> dict:
     seances = [_session_view(s, log.get(s["id"])) for s in _sessions(st)
                if since <= s["date"] <= today and (log.get(s["id"]) or not s.get("optional"))]
     linked = {str(k) for k in (st.get("known") or {})}
-    autres = [{"date": a.get("date"), "type": a.get("type"), "nom": a.get("name"), "km": a.get("distanceKm"),
+    autres = [{"date": a.get("date"), "jour": _jour(a["date"]) if a.get("date") else None, "type": a.get("type"), "nom": a.get("name"), "km": a.get("distanceKm"),
                "duree_min": round((a.get("durationSec") or 0) / 60, 1), "fc_moy": a.get("avgHr"), "calories": a.get("calories"),
                "charge": a.get("trainingLoad"), "rattachee_au_plan": str(a.get("id")) in linked and (st.get("known") or {}).get(str(a.get("id"))) not in ("pre-plan", "sport", "free")}
               for a in (st.get("acts") or {}).values() if since <= (a.get("date") or "") <= today]
