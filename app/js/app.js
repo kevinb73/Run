@@ -1,0 +1,368 @@
+import * as store from './store.js';
+import { generatePlan, PHASES } from './engine/plan.js';
+import { adaptPlan, recentStats, currentWeek } from './engine/adapt.js';
+import { vdotFromPerformance, predictTime } from './engine/vdot.js';
+import { todayISO, daysBetween } from './engine/dates.js';
+import { STEPS, defaultDraft } from './onboarding.js';
+import { esc, pace, paceRange, duration, dateLong, dateShort, dateFull, ZONES, TYPE_ICON, stepDuration } from './format.js';
+
+let state = store.load();
+let draft = state.plan ? { ...defaultDraft(), ...state.plan.profile } : defaultDraft();
+let stepIdx = 0;
+
+const view = document.getElementById('view');
+const tabbar = document.getElementById('tabbar');
+const today = () => todayISO();
+
+function persist() {
+  if (!store.save(state)) toast('Impossible d\'enregistrer (stockage plein ou mode privé).');
+}
+
+function toast(msg) {
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.textContent = msg;
+  document.body.append(t);
+  setTimeout(() => t.remove(), 3500);
+}
+
+const allSessions = () => state.plan.weeks.flatMap((w) => w.sessions);
+const findSession = (id) => allSessions().find((s) => s.id === id);
+
+// ---------------- Routeur ----------------
+
+function route() {
+  const hash = location.hash.slice(1) || '/';
+  const [, page, arg] = hash.split('/');
+  if (!state.plan && page !== 'onboarding') { location.replace('#/onboarding'); return; }
+  tabbar.hidden = page === 'onboarding';
+  for (const a of tabbar.querySelectorAll('a')) a.classList.toggle('active', a.dataset.page === (page || 'today'));
+  window.scrollTo(0, 0);
+  switch (page) {
+    case 'onboarding': return renderOnboarding();
+    case 'plan': return renderPlan(arg);
+    case 'session': return renderSession(arg);
+    case 'profile': return renderProfile();
+    default: return renderToday();
+  }
+}
+
+// ---------------- Questionnaire ----------------
+
+function renderOnboarding() {
+  const step = STEPS[stepIdx];
+  const last = stepIdx === STEPS.length - 1;
+  view.innerHTML = `
+    <section class="onboarding">
+      <div class="progress"><div style="width:${((stepIdx + 1) / STEPS.length) * 100}%"></div></div>
+      <p class="step-count">Question ${stepIdx + 1} / ${STEPS.length}</p>
+      <h1>${esc(step.title)}</h1>
+      <form id="step-form" novalidate>${step.render(draft)}
+        <p class="error" role="alert"></p>
+        <div class="actions">
+          ${stepIdx > 0 ? '<button type="button" class="btn ghost" id="back">Retour</button>' : state.plan ? '<a class="btn ghost" href="#/">Annuler</a>' : '<span></span>'}
+          <button type="submit" class="btn primary">${last ? 'Générer mon plan' : 'Continuer'}</button>
+        </div>
+      </form>
+    </section>`;
+  const form = view.querySelector('#step-form');
+  form.querySelectorAll('input[type=range]').forEach((r) => r.addEventListener('input', () => { r.nextElementSibling.textContent = `${r.value} km`; }));
+  const noref = form.querySelector('[name=noref]');
+  if (noref) form.addEventListener('input', (e) => { if (e.target !== noref && e.target.name !== 'noref') noref.checked = false; });
+  view.querySelector('#back')?.addEventListener('click', () => { stepIdx--; renderOnboarding(); });
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const err = step.read(form, draft);
+    if (err) { form.querySelector('.error').textContent = err; return; }
+    if (!last) { stepIdx++; renderOnboarding(); return; }
+    try {
+      const profile = { ...draft };
+      delete profile.hasRecent;
+      state = { plan: generatePlan(profile, { today: today() }), log: {} };
+      persist();
+      stepIdx = 0;
+      location.hash = '#/';
+    } catch (ex) {
+      form.querySelector('.error').textContent = ex.message;
+    }
+  });
+}
+
+// ---------------- Aujourd'hui ----------------
+
+function sessionCard(s, { big = false } = {}) {
+  const entry = state.log[s.id];
+  const status = entry?.done ? '<span class="badge done">Fait</span>' : entry?.skipped ? '<span class="badge skip">Sautée</span>' : '';
+  return `<a class="card session-card type-${s.type} ${big ? 'big' : ''}" href="#/session/${s.id}">
+    <span class="icon" aria-hidden="true">${TYPE_ICON[s.type] ?? '•'}</span>
+    <span class="body">
+      <span class="date">${esc(big ? dateLong(s.date) : dateShort(s.date))}</span>
+      <span class="title">${esc(s.title)}</span>
+      <span class="meta">${s.km} km · ~${duration(s.min * 60)}</span>
+    </span>${status}</a>`;
+}
+
+function renderToday() {
+  const p = state.plan;
+  const t = today();
+  const daysLeft = daysBetween(t, p.profile.raceDate);
+  const upcoming = allSessions().filter((s) => s.date >= t && !state.log[s.id]?.done && !state.log[s.id]?.skipped);
+  const next = upcoming[0];
+  const week = currentWeek(p, t);
+  const missed = allSessions().filter((s) => s.date < t && !state.log[s.id]).slice(-3);
+  const stats = recentStats(p, state.log, t);
+
+  let weekBlock = '';
+  if (week) {
+    const done = week.sessions.filter((s) => state.log[s.id]?.done);
+    const doneKm = done.reduce((a, s) => a + (state.log[s.id].actualKm ?? s.km), 0);
+    weekBlock = `<section class="card">
+      <div class="row between"><h2>Semaine ${week.index + 1}</h2><span class="phase phase-${week.phase}">${PHASES[week.phase].label}${week.recovery ? ' · allégée' : ''}</span></div>
+      <div class="meter"><div style="width:${Math.min(100, (doneKm / week.volumeKm) * 100)}%"></div></div>
+      <p class="muted">${doneKm.toFixed(1)} / ${week.volumeKm} km · ${done.length} / ${week.sessions.length} séances</p>
+      <div class="week-dots">${week.sessions.map((s) => `<a href="#/session/${s.id}" class="dot ${state.log[s.id]?.done ? 'done' : s.date < t ? 'missed' : ''} ${s.date === t ? 'today' : ''}" title="${esc(s.title)}">${TYPE_ICON[s.type]}</a>`).join('')}</div>
+    </section>`;
+  }
+
+  view.innerHTML = `
+    <header class="hero">
+      <p class="muted">${esc(p.raceLabel)} · ${esc(dateFull(p.profile.raceDate))}</p>
+      <div class="countdown"><strong>${daysLeft}</strong><span>jours</span></div>
+      <p>Objectif visé : <strong>${duration(p.predictedGoalSec)}</strong> <span class="muted">(${pace(p.racePace)}/km)</span></p>
+    </header>
+    ${next ? `<h2 class="section-title">${next.date === t ? 'Aujourd\'hui' : 'Prochaine séance'}</h2>${sessionCard(next, { big: true })}` : '<section class="card"><p>Plan terminé. Bravo ! Refais le questionnaire pour un nouvel objectif.</p></section>'}
+    ${missed.length ? `<section class="card warn"><p><strong>${missed.length} séance(s) passée(s) sans retour.</strong> Indique si tu les as faites : c'est ce qui permet d'adapter le plan.</p>${missed.map((s) => sessionCard(s)).join('')}</section>` : ''}
+    ${weekBlock}
+    ${stats.done >= 3 ? `<section class="card"><h2>Coach</h2><p class="muted">Sur 14 jours : ${Math.round((stats.completion ?? 0) * 100)} % des séances faites, ${Math.round(stats.hardShare * 100)} % ressenties dures.</p>
+      <button class="btn" id="adapt">Réajuster le plan</button></section>` : ''}
+    ${p.warnings.map((w) => `<section class="card note"><p>${esc(w)}</p></section>`).join('')}`;
+  view.querySelector('#adapt')?.addEventListener('click', () => doAdapt());
+}
+
+function doAdapt(newRace = null) {
+  const { plan, adjustment } = adaptPlan(state.plan, state.log, today(), newRace);
+  state.plan = plan;
+  persist();
+  showSheet(`<h2>Plan réajusté</h2><ul>${adjustment.reasons.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>
+    <button class="btn primary" data-close>OK</button>`);
+  route();
+}
+
+// ---------------- Plan ----------------
+
+function renderPlan(openIdx) {
+  const t = today();
+  const cur = currentWeek(state.plan, t);
+  const upcoming = state.plan.weeks.find((w) => w.sessions.some((x) => x.date >= t)) ?? state.plan.weeks[0];
+  const open = openIdx != null ? Number(openIdx) : (cur ?? upcoming).index;
+  let lastPhase = null;
+  const html = state.plan.weeks.map((w) => {
+    let head = '';
+    if (w.phase !== lastPhase) {
+      lastPhase = w.phase;
+      head = `<div class="phase-head phase-${w.phase}"><h2>${PHASES[w.phase].label}</h2><p>${esc(PHASES[w.phase].goal)}</p></div>`;
+    }
+    const done = w.sessions.filter((s) => state.log[s.id]?.done).length;
+    return `${head}<details class="week ${w === cur ? 'current' : ''}" ${w.index === open ? 'open' : ''} id="w${w.index}">
+      <summary><span><strong>Semaine ${w.index + 1}</strong> <span class="muted">${esc(dateShort(w.start))}</span>${w.recovery ? ' <span class="badge">allégée</span>' : ''}${w.raceWeek ? ' <span class="badge race">course</span>' : ''}</span>
+      <span class="muted">${w.volumeKm} km${done ? ` · ${done}/${w.sessions.length} ✓` : ''}</span></summary>
+      <div class="week-sessions">${w.sessions.map((s) => sessionCard(s)).join('')}</div>
+    </details>`;
+  }).join('');
+  view.innerHTML = `<h1>Mon plan</h1>
+    <p class="muted">${state.plan.weeks.length} semaines · ${state.plan.raceLabel} le ${esc(dateFull(state.plan.profile.raceDate))}</p>
+    <div class="volume-chart" aria-label="Volume hebdomadaire">${volumeChart()}</div>${html}`;
+  if (open != null) document.getElementById(`w${open}`)?.scrollIntoView({ block: 'center' });
+}
+
+function volumeChart() {
+  const weeks = state.plan.weeks;
+  const max = Math.max(...weeks.map((w) => w.volumeKm));
+  const cur = currentWeek(state.plan, today());
+  return weeks.map((w) => `<a href="#/plan/${w.index}" class="bar phase-${w.phase} ${w === cur ? 'current' : ''}" style="height:${(w.volumeKm / max) * 100}%" title="S${w.index + 1} : ${w.volumeKm} km"></a>`).join('');
+}
+
+// ---------------- Séance ----------------
+
+function stepsHTML(steps) {
+  return `<ol class="steps">${steps.map((st) => {
+    if (st.kind === 'repeat') return `<li class="repeat"><span class="times">${st.times} ×</span>${stepsHTML(st.steps)}</li>`;
+    const z = st.zone ? ZONES[st.zone] : null;
+    return `<li class="step kind-${st.kind}" style="--zc:${z?.color ?? 'var(--muted)'}">
+      <span class="dur">${stepDuration(st.dur)}</span>
+      <span class="what"><span><strong>${z ? z.label : 'Récupération'}</strong>${st.pace ? ` <span class="pace">${paceRange(st.pace)}</span>` : ''}</span><small>${esc(st.note ?? '')}</small></span>
+    </li>`;
+  }).join('')}</ol>`;
+}
+
+function renderSession(id) {
+  const s = findSession(id);
+  if (!s) { view.innerHTML = '<p>Séance introuvable.</p>'; return; }
+  const e = state.log[id] ?? {};
+  const t = today();
+  view.innerHTML = `
+    <a href="#/plan" class="back">‹ Plan</a>
+    <p class="muted">${esc(dateLong(s.date))}</p>
+    <h1>${esc(s.title)}</h1>
+    <p class="big-meta">${s.km} km · ~${duration(s.min * 60)}</p>
+    <p>${esc(s.description)}</p>
+    ${stepsHTML(s.steps)}
+    <section class="card">
+      <h2>Garmin</h2>
+      <p class="muted">L'envoi direct vers la montre arrive à l'étape 2 (serveur de synchronisation).</p>
+      <button class="btn" disabled>Envoyer vers ma montre</button>
+    </section>
+    ${s.date <= t ? `<section class="card">
+      <h2>Ton retour</h2>
+      <form id="log-form">
+        <div class="choices">
+          <label class="choice small"><input type="radio" name="feel" value="easy" ${e.feel === 'easy' ? 'checked' : ''}><span>Facile</span></label>
+          <label class="choice small"><input type="radio" name="feel" value="ok" ${e.feel === 'ok' ? 'checked' : ''}><span>Correct</span></label>
+          <label class="choice small"><input type="radio" name="feel" value="hard" ${e.feel === 'hard' ? 'checked' : ''}><span>Dur</span></label>
+        </div>
+        <label class="field">Distance réelle (km)<input type="number" inputmode="decimal" step="0.1" name="km" value="${e.actualKm ?? s.km}"></label>
+        <label class="field">Note (optionnel)<input type="text" name="note" value="${esc(e.note ?? '')}" maxlength="200"></label>
+        <div class="actions">
+          <button type="button" class="btn ghost" id="skip">${e.skipped ? 'Annuler « sautée »' : 'Pas faite'}</button>
+          <button type="submit" class="btn primary">${e.done ? 'Mettre à jour' : 'Séance faite'}</button>
+        </div>
+      </form>
+    </section>` : '<p class="muted center">Tu pourras saisir ton retour le jour de la séance.</p>'}`;
+  const form = view.querySelector('#log-form');
+  form?.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    const feel = form.querySelector('[name=feel]:checked')?.value;
+    if (!feel) { toast('Indique ton ressenti : c\'est ce qui permet d\'adapter le plan.'); return; }
+    state.log[id] = { done: true, feel, actualKm: Number(form.km.value) || s.km, note: form.note.value.trim() || undefined, at: t };
+    persist();
+    if (s.type === 'race') askRaceResult(s);
+    else { toast('Séance enregistrée 💪'); history.back(); }
+  });
+  view.querySelector('#skip')?.addEventListener('click', () => {
+    if (e.skipped) delete state.log[id]; else state.log[id] = { skipped: true, at: t };
+    persist();
+    renderSession(id);
+  });
+}
+
+function askRaceResult(s) {
+  showSheet(`<h2>Ton chrono ?</h2><form id="race-form">${timeFields()}<button class="btn primary" type="submit">Enregistrer</button></form>`, (sheet) => {
+    sheet.querySelector('#race-form').addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      const sec = readTimeFields(sheet);
+      if (sec) { state.log[s.id].timeSec = sec; persist(); toast(`Bravo : ${duration(sec)} !`); }
+      closeSheet();
+      location.hash = '#/';
+    });
+  });
+}
+
+// ---------------- Profil ----------------
+
+function renderProfile() {
+  const p = state.plan;
+  const cur = currentWeek(p, today()) ?? p.weeks[0];
+  view.innerHTML = `
+    <h1>Profil & allures</h1>
+    <section class="card">
+      <h2>Niveau actuel</h2>
+      <p>VDOT <strong>${cur.vdot}</strong> <span class="muted">(départ ${p.vdotStart}, visé ${p.vdotGoal})</span></p>
+      <p class="muted">Prédiction aujourd'hui : ${duration(predictTime(cur.vdot, p.profile.raceDistance))} · objectif plan : ${duration(p.predictedGoalSec)}</p>
+    </section>
+    <section class="card">
+      <h2>Tes allures cette semaine</h2>
+      <table class="paces">${Object.entries(cur.paces).map(([z, r]) => `<tr><td><span class="swatch" style="background:${ZONES[z].color}"></span>${ZONES[z].label}</td><td>${paceRange(r)}</td></tr>`).join('')}
+        <tr><td><span class="swatch" style="background:${ZONES.race.color}"></span>Allure course</td><td>${pace(p.racePace)}/km</td></tr></table>
+    </section>
+    <section class="card">
+      <h2>Nouveau chrono</h2>
+      <p class="muted">Tu as fait une course ou un test ? Le plan se recalcule à partir de ce résultat.</p>
+      <button class="btn" id="new-race">Ajouter un chrono</button>
+    </section>
+    ${p.adjustments.length ? `<section class="card"><h2>Historique des ajustements</h2><ul class="adj">${p.adjustments.slice().reverse().map((a) => `<li><strong>${esc(dateShort(a.date))}</strong> — ${a.reasons.map(esc).join(' ')}</li>`).join('')}</ul></section>` : ''}
+    <section class="card">
+      <h2>Données</h2>
+      <p class="muted">Tout est stocké sur ton téléphone. Exporte une sauvegarde de temps en temps.</p>
+      <div class="actions wrap">
+        <button class="btn" id="export">Exporter</button>
+        <label class="btn">Importer<input type="file" accept="application/json" id="import" hidden></label>
+        <button class="btn" id="redo">Refaire le questionnaire</button>
+      </div>
+    </section>
+    <p class="muted center small">Run Coach · v0.1</p>`;
+
+  view.querySelector('#new-race').addEventListener('click', () => {
+    showSheet(`<h2>Nouveau chrono</h2><form id="nr">
+      <div class="choices">${[[5000, '5 km'], [10000, '10 km'], [21097, 'Semi'], [42195, 'Marathon']].map(([m, l]) => `<label class="choice small"><input type="radio" name="d" value="${m}"><span>${l}</span></label>`).join('')}</div>
+      ${timeFields()}<p class="error"></p><button class="btn primary" type="submit">Recalculer le plan</button></form>`, (sheet) => {
+      sheet.querySelector('#nr').addEventListener('submit', (ev) => {
+        ev.preventDefault();
+        const d = Number(sheet.querySelector('[name=d]:checked')?.value);
+        const sec = readTimeFields(sheet);
+        if (!d || !sec) { sheet.querySelector('.error').textContent = 'Distance et temps requis.'; return; }
+        const v = vdotFromPerformance(d, sec);
+        if (v < 20 || v > 85) { sheet.querySelector('.error').textContent = 'Chrono incohérent, vérifie la saisie.'; return; }
+        closeSheet();
+        doAdapt({ distanceM: d, timeSec: sec });
+      });
+    });
+  });
+  view.querySelector('#export').addEventListener('click', () => {
+    const blob = new Blob([store.exportJSON(state)], { type: 'application/json' });
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `run-coach-${today()}.json` });
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+  view.querySelector('#import').addEventListener('change', async (ev) => {
+    try {
+      state = store.importJSON(await ev.target.files[0].text());
+      persist();
+      toast('Sauvegarde restaurée.');
+      route();
+    } catch (ex) { toast(ex.message); }
+  });
+  view.querySelector('#redo').addEventListener('click', () => {
+    if (!confirm('Générer un nouveau plan ? L\'historique des séances du plan actuel sera effacé.')) return;
+    draft = { ...defaultDraft(), ...p.profile, hasRecent: !!p.profile.recent };
+    stepIdx = 0;
+    location.hash = '#/onboarding';
+  });
+}
+
+// ---------------- Feuille modale ----------------
+
+function timeFields() {
+  return `<div class="time-input">
+    <label><input type="number" inputmode="numeric" min="0" name="h" placeholder="0"><span>h</span></label>
+    <label><input type="number" inputmode="numeric" min="0" max="59" name="m" placeholder="00"><span>min</span></label>
+    <label><input type="number" inputmode="numeric" min="0" max="59" name="s" placeholder="00"><span>s</span></label></div>`;
+}
+
+function readTimeFields(root) {
+  const v = (n) => Number(root.querySelector(`[name=${n}]`).value || 0);
+  const t = v('h') * 3600 + v('m') * 60 + v('s');
+  return t > 0 ? t : null;
+}
+
+function showSheet(html, onMount) {
+  closeSheet();
+  const wrap = document.createElement('div');
+  wrap.className = 'sheet-backdrop';
+  wrap.innerHTML = `<div class="sheet" role="dialog" aria-modal="true">${html}</div>`;
+  wrap.addEventListener('click', (e) => { if (e.target === wrap || e.target.hasAttribute('data-close')) closeSheet(); });
+  document.body.append(wrap);
+  onMount?.(wrap);
+}
+
+function closeSheet() {
+  document.querySelector('.sheet-backdrop')?.remove();
+}
+
+// ---------------- Démarrage ----------------
+
+window.addEventListener('hashchange', route);
+route();
+
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  navigator.serviceWorker.register('./sw.js').catch(() => {});
+}
