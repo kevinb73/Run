@@ -235,6 +235,40 @@ test('envoi refusé par le serveur (renfo) : pas de boucle de réaffichage, le d
   noErrors(p);
 });
 
+test('ChatGPT propose, l\'utilisateur applique ou refuse dans l\'app', async () => {
+  const p = await newPage(env.browser, '2026-11-15T10:00:00');
+  await seed(p, { now: '2026-11-15T10:00:00', extra: { garmin: GARMIN_CFG }, route: '#/profile' });
+  await p.click('#gpt-url'); await p.waitForTimeout(400);
+  const url = (await p.locator('.gpt-url code').innerText()).trim();
+  const st0 = await stored(p);
+  await fetch(`${GARMIN_CFG.url}/backup`, { method: 'PUT', headers: { 'X-Api-Key': GARMIN_CFG.key, 'content-type': 'application/json' }, body: JSON.stringify(st0) });
+  const all = st0.plan.weeks.flatMap((w) => w.sessions);
+  const easy = all.find((s) => s.type === 'easy' && s.date >= '2026-11-16');
+  const long = all.find((s) => s.type === 'long' && s.date >= '2026-11-16');
+  const call = async (args) => (await (await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'proposer_modification', arguments: args } }) })).json()).result;
+  const r1 = await call({ action: 'alleger', date: long.date, raison: 'Futsal la veille : on garde des jambes.' });
+  assert.equal(r1.isError, false, JSON.stringify(r1));
+  const r2 = await call({ action: 'sauter', date: easy.date, raison: 'Mauvaise nuit annoncée.' });
+  assert.equal(r2.isError, false);
+  await p.evaluate(() => { location.hash = '#/'; }); await p.reload(); await p.waitForTimeout(2500);
+  assert.equal(await p.locator('.proposal').count(), 2, 'deux cartes « ChatGPT propose »');
+  // Appliquer l'allègement de la sortie longue
+  await p.locator('.proposal', { hasText: 'Alléger' }).locator('[data-apply]').click(); await p.waitForTimeout(600);
+  await p.click('[data-close]');
+  let st = await stored(p);
+  const after = st.plan.weeks.flatMap((w) => w.sessions).find((s) => s.id === long.id);
+  assert.ok(after.downgraded, 'sortie longue allégée');
+  // Refuser le saut
+  await p.locator('.proposal [data-refuse]').click(); await p.waitForTimeout(500);
+  st = await stored(p);
+  assert.ok(!st.log[easy.id]?.skipped, 'refusée : rien ne change');
+  assert.equal(await p.locator('.proposal').count(), 0);
+  const server = await (await fetch(`${GARMIN_CFG.url}/proposals`, { headers: { 'X-Api-Key': GARMIN_CFG.key } })).json();
+  assert.deepEqual(server.proposals.map((x) => x.status).sort(), ['applied', 'refused']);
+  noErrors(p);
+});
+
 test('toutes les pages s\'ouvrent sans erreur', async () => {
   const p = await newPage(env.browser);
   await seed(p);

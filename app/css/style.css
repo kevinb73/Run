@@ -482,3 +482,6 @@ svg { flex: none; }
 .gpt-url code { display: block; word-break: break-all; background: var(--surface-2); padding: 10px; border-radius: 10px; font-size: 0.8rem; }
 .gpt-steps { padding-left: 18px; margin: 12px 0; } .gpt-steps li { margin: 6px 0; }
 #gpt-card .btn { width: 100%; margin-top: 8px; }
+.proposal { box-shadow: inset 3px 0 0 var(--accent); }
+.proposal p { margin: 6px 0; }
+.proposal .actions { margin-top: 10px; }
