@@ -81,10 +81,13 @@ export async function repushIfNeeded(ids) {
 
 export let pushing = false;
 /** Envoie sur la montre les séances des 8 prochains jours qui n'y sont pas encore (silencieux si rien à faire). */
+const pushFailed = new Set();
+
 export async function pushWeek({ silent = false } = {}) {
   if (!garminOn() || pushing) return;
   await cleanup;
-  const soon = toPush(today()).filter((s) => state.pushed[s.id]?.date !== s.date);
+  // Une séance refusée par le serveur n'est pas retentée avant la prochaine ouverture de l'app (évite toute boucle).
+  const soon = toPush(today()).filter((s) => state.pushed[s.id]?.date !== s.date && !pushFailed.has(`${s.id}@${s.date}`));
   if (!soon.length) return;
   pushing = true;
   const btn = view.querySelector('#push-week');
@@ -93,6 +96,7 @@ export async function pushWeek({ silent = false } = {}) {
   try {
     for (const s of soon) {
       try { await pushSession(s); ok++; } catch (ex) {
+        pushFailed.add(`${s.id}@${s.date}`);
         if (s.type === 'strength') continue; // serveur pas encore à jour pour le renfo : on n'empêche pas l'envoi des courses
         if (!silent) toast(ex.message); break;
       }
@@ -100,7 +104,8 @@ export async function pushWeek({ silent = false } = {}) {
   } finally {
     pushing = false;
   }
-  if (ok) toast(`${ok} séance(s) envoyée(s) sur ta montre.`);
+  if (!ok) return; // rien de nouveau sur la montre : pas besoin de réafficher l'écran
+  toast(`${ok} séance(s) envoyée(s) sur ta montre.`);
   if (location.hash === '' || location.hash === '#/') route();
 }
 

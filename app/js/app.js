@@ -44,6 +44,8 @@ function maybeMonthlyRecap() {
   }), 400);
 }
 
+let lastHash = null;
+
 export function route() {
   const hash = location.hash.slice(1) || '/';
   const [, page, arg] = hash.split('/');
@@ -52,7 +54,9 @@ export function route() {
   if (state.plan && page !== 'progress') maybeMonthlyRecap();
   tabbar.hidden = page === 'onboarding';
   for (const a of tabbar.querySelectorAll('a')) a.classList.toggle('active', a.dataset.page === (page || 'today'));
-  window.scrollTo(0, 0);
+  // On ne remonte en haut que si on change d'écran (un simple rafraîchissement garde la position).
+  if (hash !== lastHash) window.scrollTo(0, 0);
+  lastHash = hash;
   switch (page) {
     case 'onboarding': return renderOnboarding();
     case 'plan': return renderPlan(arg);

@@ -37,6 +37,7 @@ export async function startServers() {
 }
 
 export const setActivities = (acts) => fetch(`${GARMIN}/__test/activities`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(acts) });
+export const failUploads = (pattern) => fetch(`${GARMIN}/__test/fail`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pattern }) });
 export const garminCalls = async () => (await fetch(`${GARMIN}/__test/calls`)).json();
 
 /** Nouvelle page iPhone ; la date « maintenant » se règle avec setNow (stockée pour survivre aux rechargements). */

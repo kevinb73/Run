@@ -2,7 +2,7 @@
 // Lancement : npm run test:e2e   (nécessite Playwright + Chromium, et les dépendances Python du serveur)
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { startServers, newPage, seed, stored, setActivities, garminCalls, GARMIN_CFG, USER_PROFILE, APP } from './harness.mjs';
+import { startServers, newPage, seed, stored, setActivities, garminCalls, failUploads, GARMIN_CFG, USER_PROFILE, APP } from './harness.mjs';
 
 let env;
 before(async () => { env = await startServers(); });
@@ -207,6 +207,24 @@ test('coach ChatGPT : adresse secrète affichée, le connecteur répond (protoco
   const res = (await call('tools/call', { name: 'profil_et_plan', arguments: {} })).result;
   assert.equal(res.isError, false, JSON.stringify(res));
   assert.deepEqual(res.structuredContent.jours_course, [0, 2, 6]);
+  noErrors(p);
+});
+
+test('envoi refusé par le serveur (renfo) : pas de boucle de réaffichage, le défilement reste fluide', async () => {
+  await failUploads('Renforcement');
+  const p = await newPage(env.browser, '2026-11-15T10:00:00');
+  await seed(p, { now: '2026-11-15T10:00:00', extra: { garmin: GARMIN_CFG } });
+  await p.waitForTimeout(2500); // synchro + envoi (le renfo échoue)
+  await p.evaluate(() => {
+    window.__renders = 0;
+    new MutationObserver(() => { window.__renders++; }).observe(document.getElementById('view'), { childList: true });
+    window.scrollTo(0, 400);
+  });
+  await p.waitForTimeout(3000);
+  const { renders, y } = await p.evaluate(() => ({ renders: window.__renders, y: window.scrollY }));
+  assert.ok(renders <= 1, `écran réaffiché ${renders} fois en 3 s`);
+  assert.ok(y > 100, `position de défilement conservée (${y})`);
+  await failUploads(null);
   noErrors(p);
 });
 
