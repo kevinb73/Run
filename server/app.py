@@ -244,6 +244,9 @@ def _summary(a: dict[str, Any]) -> dict[str, Any]:
         "maxHr": a.get("maxHR"),
         "trainingEffect": a.get("aerobicTrainingEffect"),
         "trainingLoad": a.get("activityTrainingLoad"),
+        "calories": a.get("calories"),
+        "elevationGainM": a.get("elevationGain"),
+        "cadence": a.get("averageRunningCadenceInStepsPerMinute"),
         "anaerobicEffect": a.get("anaerobicTrainingEffect"),
     }
 
@@ -272,6 +275,7 @@ def laps(activity_id: int) -> dict[str, Any]:
             "distanceM": round(lap.get("distance") or 0),
             "durationSec": round(lap.get("duration") or lap.get("elapsedDuration") or 0),
             "avgHr": lap.get("averageHR"),
+            "maxHr": lap.get("maxHR"),
         })
     return {"laps": out}
 

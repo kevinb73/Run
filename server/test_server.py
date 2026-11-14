@@ -54,7 +54,9 @@ class FakeGarmin:
     def get_activities_by_date(self, start, end):
         return [
             {"activityId": 1, "activityName": "Course", "startTimeLocal": "2026-11-16 18:00:00", "distance": 5000,
-             "duration": 2550, "averageHR": 140, "activityType": {"typeKey": "running"}},
+             "duration": 2550, "averageHR": 140, "maxHR": 158, "calories": 412, "elevationGain": 23.4,
+             "averageRunningCadenceInStepsPerMinute": 162.3, "aerobicTrainingEffect": 2.4, "activityTrainingLoad": 48,
+             "activityType": {"typeKey": "running"}},
             {"activityId": 2, "activityName": "Futsal", "startTimeLocal": "2026-11-18 20:00:00", "distance": 0,
              "duration": 3600, "activityType": {"typeKey": "indoor_soccer"}},
         ]
@@ -112,6 +114,7 @@ class ApiTest(unittest.TestCase):
         acts = self.c.get("/activities?start=2026-11-10&end=2026-11-20", headers=self.h).json()["activities"]
         self.assertEqual([a["type"] for a in acts], ["running", "indoor_soccer"])
         self.assertEqual(acts[0]["paceSecPerKm"], 510)
+        self.assertEqual((acts[0]["calories"], acts[0]["maxHr"], acts[0]["cadence"]), (412, 158, 162.3))
         self.assertIsNone(acts[1]["paceSecPerKm"])
 
     def test_readiness(self):
@@ -133,7 +136,7 @@ class ApiTest(unittest.TestCase):
             {"distance": 1318.6, "duration": 360.0, "averageHR": 178},
         ]}
         laps = self.c.get("/activities/42/laps", headers=self.h).json()["laps"]
-        self.assertEqual(laps[1], {"distanceM": 1319, "durationSec": 360, "avgHr": 178})
+        self.assertEqual(laps[1], {"distanceM": 1319, "durationSec": 360, "avgHr": 178, "maxHr": None})
 
     def test_hr_profile(self):
         self.fake.get_heart_rate_zones_v2 = lambda: [
