@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { vdotFromPerformance, predictTime, trainingPaces } from '../app/js/engine/vdot.js';
 import { generatePlan, allocatePhases, assignDays, RACES } from '../app/js/engine/plan.js';
+import { applyActivities } from '../app/js/engine/garminsync.js';
+import { moveSession } from '../app/js/engine/reschedule.js';
 import { adaptPlan } from '../app/js/engine/adapt.js';
 
 const TODAY = '2026-11-14';
@@ -446,4 +448,14 @@ test('petite base (sortie max 3 km) : on part du niveau réel, progression douce
     if (prev) assert.ok(long <= prev * 1.25 + 0.6, `sortie longue ${prev} → ${long}`);
     prev = Math.max(prev, long); // une semaine allégée ne remet pas la rampe à zéro
   }
+});
+
+test('séance avancée avant le début du plan : la course du jour est bien reconnue', () => {
+  const plan = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, weeklyKm: 5, longestRunKm: 3 }, { today: TODAY });
+  const first = plan.weeks[0].sessions.find((s) => s.km);
+  const moved = moveSession(plan, first.id, TODAY, {}).plan;
+  const act = { id: 'a1', date: TODAY, start: `${TODAY}T15:00:00`, type: 'running', distanceKm: 2.3, durationSec: 1300 };
+  const r = applyActivities(moved, {}, [act], {});
+  assert.notEqual(r.known.a1, 'pre-plan');
+  assert.ok(r.log[first.id]?.done, 'séance cochée');
 });
