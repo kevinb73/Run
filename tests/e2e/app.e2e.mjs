@@ -149,6 +149,32 @@ test('pas dispo : la séance passe au jour proposé (sans toucher aux autres), o
   noErrors(p);
 });
 
+test('bilan mensuel : carte dans Progrès, fenêtre le 1er du mois suivant (une seule fois)', async () => {
+  const p = await newPage(env.browser);
+  await seed(p, {
+    now: '2026-12-02T09:00:00',
+    mutate: `const all = st.plan.weeks.flatMap((w) => w.sessions);
+      const run = all.find((s) => s.type === 'easy' && s.date < '2026-12-01');
+      const fut = all.find((s) => s.sport === 'futsal' && s.date < '2026-12-01');
+      st.acts = { 9: { id: 9, date: run.date, type: 'running', distanceKm: 2.6, durationSec: 1320, avgHr: 150, paceSecPerKm: 508, calories: 250 } };
+      st.known = { 9: run.id };
+      st.log[run.id] = { done: true, garminId: 9, source: 'garmin', actualKm: 2.6, feel: 'ok', at: run.date };
+      st.log[fut.id] = { done: true, feel: 'hard', sportMin: 60, at: fut.date };
+      st.monthlyShown = '2026-10';`,
+  });
+  await p.waitForTimeout(600);
+  assert.ok(await p.locator('text=Ton bilan de novembre 2026').count(), 'fenêtre de bilan');
+  await p.click('#see-month'); await p.waitForTimeout(400);
+  assert.ok(await p.locator('text=Bilan de novembre 2026').count());
+  const txt = await p.locator('#monthly').innerText();
+  assert.match(txt, /2,6/); assert.match(txt, /Futsal/);
+  await p.click('#monthly [aria-label="Mois suivant"]'); await p.waitForTimeout(200);
+  assert.ok(await p.locator('text=Bilan de décembre 2026').count(), 'navigation');
+  await p.evaluate(() => { location.hash = '#/'; }); await p.reload(); await p.waitForTimeout(800);
+  assert.equal(await p.locator('text=Ton bilan de novembre 2026').count(), 0, 'pas deux fois');
+  noErrors(p);
+});
+
 test('toutes les pages s\'ouvrent sans erreur', async () => {
   const p = await newPage(env.browser);
   await seed(p);

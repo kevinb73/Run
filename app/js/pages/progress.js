@@ -1,5 +1,6 @@
 import { lineChart, volumeChart as weeklyVolumeChart, progressData } from '../progress.js';
-import { esc, duration, dateShort } from '../format.js';
+import { esc, duration, dateShort, pace } from '../format.js';
+import { monthlySummary, availableMonths, monthLabel } from '../engine/monthly.js';
 import { state, today, view } from '../core.js';
 
 export function renderProgress() {
@@ -9,6 +10,7 @@ export function renderProgress() {
   const effDelta = d.eff.length >= 4
     ? (d.eff.slice(-3).reduce((a, x) => a + x.y, 0) / 3) / (d.eff.slice(0, 3).reduce((a, x) => a + x.y, 0) / 3) - 1 : null;
   view.innerHTML = `<h1>Progrès</h1>
+    ${monthlyCard(t)}
     <div class="tiles">
       <div class="tile"><span class="tile-value">${d.regularity == null ? '—' : Math.round(d.regularity * 100) + ' %'}</span><span class="tile-label">séances faites</span></div>
       <div class="tile"><span class="tile-value">${Math.round(d.totalKm)}</span><span class="tile-label">km courus</span></div>
@@ -26,6 +28,7 @@ export function renderProgress() {
     ${d.tests.length ? `<section class="card"><h2>Tests VMA</h2><ul class="adj">${d.tests.map((x) => `<li>${esc(dateShort(x.date))} : ${x.vma.toFixed(1).replace('.', ',')} km/h</li>`).join('')}</ul></section>` : ''}
     <div id="chart-tip" class="chart-tip" hidden></div>`;
   bindChartTips();
+  bindMonthly();
 }
 
 /** Valeur affichée au toucher (iPhone) ou au survol (ordinateur). */
@@ -46,4 +49,52 @@ export function bindChartTips() {
     g.addEventListener('click', (ev) => show(g, ev));
   });
   view.querySelectorAll('.chart').forEach((c) => c.addEventListener('pointerleave', () => { tip.hidden = true; }));
+}
+
+// ---------------- Bilan du mois ----------------
+
+let shownMonth = null;
+/** Ouvre l'onglet Progrès sur un mois donné. */
+export function showMonth(m) { shownMonth = m; }
+const fmtMin = (m) => (m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}` : `${m} min`);
+const fmtN = (n) => Number(n).toLocaleString('fr-FR', { maximumFractionDigits: 1 });
+const arrow = (d) => (d == null ? '' : `<small class="delta ${d > 0 ? 'up' : d < 0 ? 'down' : ''}">${d > 0 ? '▲' : d < 0 ? '▼' : '='} ${Math.abs(d)} %</small>`);
+
+/** Carte « Bilan du mois » (mois en cours par défaut, navigation vers les mois précédents). */
+export function monthlyCard(t, month = shownMonth ?? t.slice(0, 7)) {
+  const months = availableMonths(state, t);
+  if (!months.includes(month)) month = months.at(-1);
+  shownMonth = month;
+  const { cur, delta, lines } = monthlySummary(state, month, t);
+  const i = months.indexOf(month);
+  const row = (label, c, extra = '') => (c.n ? `<li><span>${label}</span><span>${c.n} × · ${fmtMin(c.min)}${extra} · ${c.kcalEstimated ? '≈ ' : ''}${fmtN(c.kcal)} kcal</span></li>` : '');
+  return `<section class="card monthly" id="monthly">
+    <div class="row between month-nav">
+      <button class="btn ghost small-btn" data-month="${months[i - 1] ?? ''}" ${i > 0 ? '' : 'disabled'} aria-label="Mois précédent">‹</button>
+      <h2>Bilan de ${esc(monthLabel(month))}</h2>
+      <button class="btn ghost small-btn" data-month="${months[i + 1] ?? ''}" ${i < months.length - 1 ? '' : 'disabled'} aria-label="Mois suivant">›</button>
+    </div>
+    <div class="tiles four">
+      <div class="tile"><span class="tile-value">${fmtN(cur.run.km)}</span><span class="tile-label">km courus ${arrow(delta.km)}</span></div>
+      <div class="tile"><span class="tile-value">${fmtMin(cur.total.min)}</span><span class="tile-label">d'activité ${arrow(delta.min)}</span></div>
+      <div class="tile"><span class="tile-value">${cur.total.kcalEstimated ? '≈' : ''}${fmtN(cur.total.kcal)}</span><span class="tile-label">kcal ${arrow(delta.kcal)}</span></div>
+      <div class="tile"><span class="tile-value">${cur.total.sessions}</span><span class="tile-label">séances ${arrow(delta.sessions)}</span></div>
+    </div>
+    ${cur.total.sessions ? `<ul class="month-rows">
+      ${row('Course', cur.run, ` · ${fmtN(cur.run.km)} km`)}
+      ${row('Futsal', cur.futsal)}${row('Arbitrage', cur.referee)}${row('Renforcement', cur.strength)}${row('Autre', cur.other)}
+    </ul>
+    ${cur.run.n ? `<p class="muted small">Plus longue sortie ${fmtN(cur.run.longestKm)} km${cur.run.bestPace ? ` · meilleure allure moyenne ${pace(cur.run.bestPace)}/km` : ''}${cur.run.avgHr ? ` · FC moyenne ${cur.run.avgHr} bpm` : ''}.</p>` : ''}
+    ${lines.length ? `<div class="coach-quote"><span class="coach-head">Le mot du coach</span>${lines.map((l) => `<p>${esc(l)}</p>`).join('')}</div>` : ''}
+    ${cur.total.kcalEstimated ? '<p class="muted small">≈ : calories estimées pour les activités notées sans montre.</p>' : ''}`
+    : '<p class="muted">Aucune activité ce mois-ci pour l\'instant.</p>'}
+  </section>`;
+}
+
+function bindMonthly() {
+  view.querySelectorAll('#monthly [data-month]').forEach((b) => b.addEventListener('click', () => {
+    if (!b.dataset.month) return;
+    view.querySelector('#monthly').outerHTML = monthlyCard(today(), b.dataset.month);
+    bindMonthly();
+  }));
 }

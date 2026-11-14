@@ -1,10 +1,11 @@
 import { upgradePlan } from './engine/upgrade.js';
+import { monthlySummary, monthLabel, prevMonth } from './engine/monthly.js';
 import { esc } from './format.js';
-import { onPause, persist, showSheet, state, tabbar, today } from './core.js';
+import { closeSheet, onPause, persist, showSheet, state, tabbar, today } from './core.js';
 import { renderOnboarding } from './pages/onboarding.js';
 import { renderPlan } from './pages/plan.js';
 import { renderProfile } from './pages/profile.js';
-import { renderProgress } from './pages/progress.js';
+import { renderProgress, showMonth } from './pages/progress.js';
 import { renderRecap } from './pages/recap.js';
 import { renderSession } from './pages/session.js';
 import { renderToday } from './pages/today.js';
@@ -26,11 +27,29 @@ export function maybeUpgradePlan() {
   }
 }
 
-export function route() {
+export /** Début de mois : le bilan du mois écoulé s'affiche une fois. */
+function maybeMonthlyRecap() {
+  const t = today();
+  if (Number(t.slice(8, 10)) > 7) return;
+  const m = prevMonth(t.slice(0, 7));
+  if (state.monthlyShown === m) return;
+  const { cur } = monthlySummary(state, m, t);
+  state.monthlyShown = m;
+  persist();
+  if (!cur.total.sessions) return;
+  setTimeout(() => showSheet(`<h2>Ton bilan de ${esc(monthLabel(m))}</h2>
+    <p><strong>${cur.total.sessions} séances</strong> · ${Number(cur.run.km).toLocaleString('fr-FR')} km courus · ${cur.total.kcalEstimated ? '≈ ' : ''}${cur.total.kcal.toLocaleString('fr-FR')} kcal</p>
+    <button class="btn primary" id="see-month">Voir le bilan complet</button><button class="btn" data-close>Plus tard</button>`, (sh) => {
+    sh.querySelector('#see-month').addEventListener('click', () => { showMonth(m); closeSheet(); location.hash = '#/progress'; });
+  }), 400);
+}
+
+function route() {
   const hash = location.hash.slice(1) || '/';
   const [, page, arg] = hash.split('/');
   if (!state.plan && page !== 'onboarding') { location.replace('#/onboarding'); return; }
   if (state.plan) maybeUpgradePlan();
+  if (state.plan && page !== 'progress') maybeMonthlyRecap();
   tabbar.hidden = page === 'onboarding';
   for (const a of tabbar.querySelectorAll('a')) a.classList.toggle('active', a.dataset.page === (page || 'today'));
   window.scrollTo(0, 0);

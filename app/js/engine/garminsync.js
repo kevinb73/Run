@@ -21,7 +21,7 @@ export const isRunningActivity = (a) => !a.type || /running/i.test(a.type);
 export const sportKindOf = (a) => (SOCCER.test(a.type ?? '') ? 'futsal' : 'other');
 
 function sportEntry(a) {
-  return { done: true, feel: undefined, durationSec: a.durationSec, avgHr: a.avgHr ?? undefined, garminId: a.id, source: 'garmin', at: a.date };
+  return { done: true, feel: undefined, durationSec: a.durationSec, avgHr: a.avgHr ?? undefined, calories: a.calories ?? undefined, garminId: a.id, source: 'garmin', at: a.date };
 }
 
 /** Le sport intense charge l'organisme : la séance dure du lendemain devient footing. */

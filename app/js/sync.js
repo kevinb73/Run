@@ -176,7 +176,8 @@ export async function syncActivities(force) {
     const { activities } = await api(state.garmin, 'GET', `/activities?start=${start}&end=${today()}`);
     for (const a of activities) {
       state.acts[a.id] = { id: a.id, date: a.date, type: a.type, name: a.name, distanceKm: a.distanceKm, durationSec: a.durationSec,
-        avgHr: a.avgHr, paceSecPerKm: a.paceSecPerKm, trainingLoad: a.trainingLoad, trainingEffect: a.trainingEffect };
+        avgHr: a.avgHr, paceSecPerKm: a.paceSecPerKm, trainingLoad: a.trainingLoad, trainingEffect: a.trainingEffect,
+        calories: a.calories ?? undefined, elevationGainM: a.elevationGainM ?? undefined, maxHr: a.maxHr ?? undefined };
     }
     const oldest = addDays(today(), -180);
     for (const [id, a] of Object.entries(state.acts)) if (a.date < oldest) delete state.acts[id];

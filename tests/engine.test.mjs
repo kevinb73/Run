@@ -631,3 +631,38 @@ test('pas dispo : jours de remplacement sûrs dans la semaine, jamais sur une au
   const mid = addDaysT(w.start, 3);
   for (const o of unavailableOptions(plan, {}, runs.at(-1).id, mid)) assert.ok(o.date >= mid);
 });
+
+test('bilan mensuel : course, futsal, arbitrage, renfo, calories, sans double comptage', async () => {
+  const { monthlySummary, availableMonths, monthLabel } = await import('../app/js/engine/monthly.js');
+  const otherSports = [{ day: 2, kind: 'futsal' }, { day: 5, kind: 'referee' }];
+  const plan = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, weeklyKm: 5, longestRunKm: 3, days: [0, 3, 6], longRunDay: 6, otherSports }, { today: TODAY });
+  const all = plan.weeks.flatMap((w) => w.sessions);
+  const run = all.find((s) => s.type === 'easy' && s.date.startsWith('2026-11'));
+  const ref = all.find((s) => s.sport === 'referee' && s.date.startsWith('2026-11'));
+  const fut = all.find((s) => s.sport === 'futsal' && s.date.startsWith('2026-11'));
+  const str = all.find((s) => s.type === 'strength' && s.date.startsWith('2026-11'));
+  const acts = {
+    1: { id: 1, date: run.date, type: 'running', distanceKm: 2.6, durationSec: 1320, avgHr: 150, paceSecPerKm: 508, calories: 250 },
+    2: { id: 2, date: ref.date, type: 'running', distanceKm: 9, durationSec: 5400, calories: 700 },
+    3: { id: 3, date: '2026-10-20', type: 'running', distanceKm: 2.5, durationSec: 1280, calories: 240 },
+  };
+  const known = { 1: run.id, 2: ref.id };
+  const log = {
+    [run.id]: { done: true, garminId: 1, source: 'garmin', actualKm: 2.6, calories: 250 },
+    [ref.id]: { done: true, garminId: 2, source: 'garmin' },
+    [fut.id]: { done: true, feel: 'hard', sportMin: 60 },
+    [str.id]: { done: true, feel: 'ok' },
+  };
+  const { cur, prev, delta, lines } = monthlySummary({ plan, log, acts, known }, '2026-11', '2026-11-30');
+  assert.equal(cur.run.n, 1); assert.equal(cur.run.km, 2.6); assert.equal(cur.run.kcal, 250);
+  assert.equal(cur.referee.n, 1); assert.equal(cur.referee.kcal, 700);
+  assert.equal(cur.futsal.n, 1); assert.equal(cur.futsal.min, 60); assert.ok(cur.futsal.kcalEstimated);
+  assert.equal(cur.strength.n, 1);
+  assert.equal(cur.total.sessions, 4);
+  assert.equal(cur.total.kcal, 250 + 700 + 600 + Math.round(str.min * 5));
+  assert.equal(prev.run.n, 1, 'octobre : la course pré-plan compte dans le bilan');
+  assert.equal(delta.km, 4);
+  assert.ok(lines.length >= 2);
+  assert.deepEqual(availableMonths({ plan, acts }, '2026-12-05'), ['2026-10', '2026-11', '2026-12']);
+  assert.equal(monthLabel('2026-11'), 'novembre 2026');
+});
