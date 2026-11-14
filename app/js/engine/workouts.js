@@ -21,7 +21,8 @@ export function estimate(steps, paces) {
   const walk = (list, mult) => {
     for (const st of list) {
       if (st.kind === 'repeat') { walk(st.steps, mult * st.times); continue; }
-      const pace = st.pace ? (st.pace[0] + st.pace[1]) / 2 : (paces.E[0] + paces.E[1]) / 2 + 30; // trot
+      const pace = st.zone === 'walk' ? 600 // marche active ≈ 10 min/km
+        : st.pace ? (st.pace[0] + st.pace[1]) / 2 : (paces.E[0] + paces.E[1]) / 2 + 30; // trot
       if (st.dur.type === 'distance') { m += st.dur.m * mult; s += (st.dur.m / 1000) * pace * mult; }
       else { s += st.dur.s * mult; m += (st.dur.s / pace) * 1000 * mult; }
     }
@@ -145,4 +146,28 @@ export function raceDay(c, label, goalTimeText) {
     step('warmup', time(600), 'E', c.paces.E, 'Échauffement léger 10 min + quelques accélérations'),
     step('run', dist(c.raceDistance), 'race', c.racePaceRange, 'Allure objectif, régulière'),
   ]);
+}
+
+/** Test chrono de fin de cycle (mode remise en forme). */
+export function testRun(c, optional = false) {
+  return session('race', optional ? 'Test 5 km (facultatif)' : 'Test 5 km',
+    'Bilan du cycle : 5 km le plus vite possible mais de façon régulière. Ton chrono recalibre le cycle suivant.', [
+      step('warmup', time(600), 'E', c.paces.E, 'Échauffement 10 min + 3 accélérations'),
+      step('run', dist(5000), 'race', c.racePaceRange, 'Effort maximal régulier'),
+      step('cooldown', time(300), 'E', c.paces.E, 'Retour au calme'),
+    ]);
+}
+
+/** Séance de reprise : alternance course / marche, encadrée par de la marche. */
+export function runWalk(c, runSec, walkSec, reps, final = false) {
+  const walkStep = (s, kind, note) => step(kind, time(s), 'walk', null, note);
+  const runStep = step('run', time(runSec), 'E', c.paces.E, 'Course très facile : tu dois pouvoir parler');
+  const main = reps > 1 ? repeat(reps, walkSec ? [runStep, walkStep(walkSec, 'recovery', 'Marche active')] : [runStep]) : runStep;
+  const runMin = runSec % 60 ? `${Math.floor(runSec / 60)} min ${runSec % 60}` : `${runSec / 60} min`;
+  const title = reps > 1 ? `Course/marche — ${reps} × ${runMin}` : `Course continue — ${runMin}`;
+  return session('easy', final ? `Objectif : ${runMin} sans t'arrêter` : title,
+    final ? 'Dernière séance du cycle : cours sans t\'arrêter, à ton rythme. Si tu y arrives, tu es prêt pour le mode « Courir régulièrement ».'
+      : 'Alternance course et marche. Le but n\'est pas la vitesse : finir la séance en ayant pu parler tout du long.', [
+      walkStep(300, 'warmup', 'Marche dynamique'), main, walkStep(300, 'cooldown', 'Marche tranquille'),
+    ]);
 }

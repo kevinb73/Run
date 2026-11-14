@@ -68,3 +68,31 @@ test('adaptation : fatigue → allures et volume en baisse', () => {
   assert.equal(new Set(ids).size, ids.length);
   assert.ok(next.weeks.some((w) => w.start < '2026-12-07'), 'semaines passées conservées');
 });
+
+const fit = { mode: 'fitness', level: 'intermediate', weeklyKm: 12, longestRunKm: 7, recent: null, days: [1, 3, 6], longRunDay: 6 };
+
+test('remise en forme : 3 objectifs × durées, fin par un bilan', () => {
+  for (const fitnessGoal of ['restart', 'regular', 'progress']) for (const durationWeeks of [12, 16]) {
+    const plan = generatePlan({ ...fit, fitnessGoal, durationWeeks }, { today: TODAY });
+    assert.equal(plan.mode, 'fitness');
+    assert.equal(plan.weeks.length, durationWeeks);
+    const last = plan.weeks.at(-1).sessions.at(-1);
+    if (fitnessGoal === 'restart') assert.match(last.title, /30 min sans/);
+    else assert.equal(last.type, 'race');
+    const ids = plan.weeks.flatMap((w) => w.sessions.map((s) => s.id));
+    assert.equal(new Set(ids).size, ids.length);
+  }
+});
+
+test('courir régulièrement : 1 seule séance de qualité par semaine', () => {
+  const plan = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, days: [0, 2, 4, 6] }, { today: TODAY });
+  for (const w of plan.weeks.slice(0, -1)) {
+    assert.ok(w.sessions.filter((s) => !['easy', 'long'].includes(s.type)).length <= 1);
+  }
+});
+
+test('remise en forme : réajustement possible', () => {
+  const plan = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12 }, { today: TODAY });
+  const { plan: next } = adaptPlan(plan, {}, '2026-12-02');
+  assert.equal(next.weeks.at(-1).sessions.at(-1).date, plan.weeks.at(-1).sessions.at(-1).date);
+});

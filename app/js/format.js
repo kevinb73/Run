@@ -41,7 +41,10 @@ export const ZONES = {
   I: { label: 'VMA', color: 'var(--z-i)' },
   R: { label: 'Vitesse', color: 'var(--z-r)' },
   race: { label: 'Allure course', color: 'var(--z-race)' },
+  walk: { label: 'Marche', color: 'var(--muted)' },
 };
+
+export const KIND_LABEL = { warmup: 'Échauffement', cooldown: 'Retour au calme', recovery: 'Récupération', run: 'Course' };
 
 export const TYPE_ICON = {
   easy: '○', long: '◎', threshold: '▲', intervals: '◆', hills: '⛰', fartlek: '≈', 'race-pace': '◉', race: '★',
