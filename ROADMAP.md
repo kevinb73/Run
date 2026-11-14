@@ -1,11 +1,21 @@
 # Feuille de route — Run Coach
 
-_Dernière mise à jour : 14 novembre 2026 · app en ligne : **v0.15** · serveur : **64abd20**_
+_Dernière mise à jour : 14 novembre 2026 · app : **v0.16** (en attente de validation, PR #16) · serveur : **64abd20**_
 
 Principe : **on n'ajoute une fonction que si elle sert la régularité, la progression ou la prévention des blessures.**
 Les priorités sont revues après chaque bloc de 2–3 semaines de course réelle.
 
 ---
+
+## Passation (à lire en premier dans une nouvelle session)
+
+État au 14 novembre 2026, fin de la première session de développement :
+
+- **App** : PWA dans `app/` (vanilla JS, aucune dépendance), publiée par GitHub Pages sur `kevinb73.github.io/Run/`. Version **v0.16** = nouvelle identité visuelle (style Nike Run Club : noir, volt `#d7ff1f`, Anton + Inter, icônes SVG `app/js/icons.js`, séance du jour en premier).
+- **Serveur** : `server/` (FastAPI + garminconnect) sur Hetzner CPX02 Helsinki, `https://95-217-212-42.sslip.io` ; `/health` affiche la version du code ; mise à jour automatique horaire depuis `main` (ou redémarrage via l'API Hetzner). La clé d'accès du serveur n'est **pas** dans le dépôt : elle est saisie dans l'app (Profil) ; le jeton API Hetzner est un secret de l'environnement Claude « Run ».
+- **Tests** : `npm test` (moteur, dont test de robustesse 600 profils) ; `python -m unittest server/test_server.py`.
+- **Utilisateur** : coureur irrégulier qui reprend, futsal mercredi + dimanche (jours « course OU futsal »), arbitre (match le samedi), Forerunner 965, iPhone. Allure footing déclarée ~8'30–9'00/km ; sa base réelle (durée de course continue) est à confirmer après la séance du lundi 16 novembre → éventuellement repasser en mode « Reprendre la course » ou baisser l'allure.
+- **Prochaines actions** : valider la v0.16 en main propre et ajuster le design écran par écran ; recalibrer le plan après les premières séances ; avant le 20 décembre : veille du test VMA allégée (3.1).
 
 ## Phase 0 — Validation sur le terrain (maintenant → ~5 décembre)
 
@@ -28,7 +38,7 @@ Livrable : liste des corrections et des seuils à ajuster.
 
 | # | Fonction | Pourquoi | Effort |
 |---|---|---|---|
-| 1.1 | **Atelier esthétique** : couleurs, typographie, icônes, écran d'accueil | L'app doit donner envie de l'ouvrir | Moyen |
+| 1.1 | ~~Atelier esthétique~~ → **fait en v0.16** (style Nike Run Club). Reste : ajustements après prise en main | L'app doit donner envie de l'ouvrir | Petit |
 | 1.2 | Icône d'app et écran de démarrage soignés | Première impression sur l'iPhone | Petit |
 | 1.3 | Retirer de la montre une séance faite en avance | Aujourd'hui elle reste affichée à sa date d'origine | Petit |
 
@@ -118,6 +128,7 @@ Niche la plus prometteuse : **préparation physique des arbitres** (tests obliga
 | v0.13 | Récap de séance (calories, prévu/réalisé, étapes, mot du coach) |
 | v0.14 | Corrections avant la 1re séance (course antérieure au plan, alerte « trop lent », refaire le plan) |
 | v0.15 | Douleur (conseils de prudence), pause (maladie / blessure / vacances), test de robustesse |
+| v0.16 | Nouvelle identité visuelle (noir / volt, Anton + Inter, icônes dessinées, séance du jour en premier) |
 
 ## Coûts récurrents
 
