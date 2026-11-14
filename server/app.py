@@ -395,6 +395,61 @@ def _latest_backup() -> tuple[str | None, dict | None]:
     return files[-1].stem.removeprefix("backup-"), json.loads(files[-1].read_text())
 
 
+# ---------------------------------------------------------------- propositions (ChatGPT propose, l'app applique)
+
+PROPOSALS = DATA_DIR / "proposals.json"
+MAX_PROPOSALS = 50
+
+
+def _load_proposals() -> list[dict[str, Any]]:
+    try:
+        return json.loads(PROPOSALS.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+
+def _save_proposals(items: list[dict[str, Any]]) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = PROPOSALS.with_suffix(".tmp")
+    tmp.write_text(json.dumps(items[-MAX_PROPOSALS:], ensure_ascii=False))
+    tmp.replace(PROPOSALS)
+
+
+def _store_proposal(prop: dict[str, Any]) -> dict[str, Any]:
+    with _lock:
+        items = _load_proposals()
+        pending = [p for p in items if p.get("status") == "pending"]
+        if len(pending) >= 5:
+            raise ValueError("déjà 5 propositions en attente : attends que l'utilisateur les traite")
+        item = {**prop, "id": f"p{int(time.time() * 1000)}", "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "status": "pending"}
+        items.append(item)
+        _save_proposals(items)
+    return item
+
+
+class ProposalUpdate(BaseModel):
+    status: str = Field(pattern="^(applied|refused|failed)$")
+    note: str | None = Field(default=None, max_length=300)
+
+
+@app.get("/proposals", dependencies=[Depends(require_key)])
+def list_proposals(status: str | None = None) -> dict[str, Any]:
+    items = _load_proposals()
+    return {"proposals": [p for p in items if not status or p.get("status") == status]}
+
+
+@app.post("/proposals/{pid}", dependencies=[Depends(require_key)])
+def update_proposal(pid: str, body: ProposalUpdate) -> dict[str, Any]:
+    with _lock:
+        items = _load_proposals()
+        for p in items:
+            if p.get("id") == pid:
+                p.update(status=body.status, note=body.note, decided=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+                _save_proposals(items)
+                return p
+    raise HTTPException(status_code=404, detail="Proposition introuvable.")
+
+
 def _check_mcp_token(token: str) -> None:
     if not API_KEY or not hmac.compare_digest(token, mcp_coach.mcp_token(API_KEY)):
         raise HTTPException(status_code=404, detail="Not Found")
@@ -414,7 +469,8 @@ async def mcp_endpoint(token: str, request: Request):
     except json.JSONDecodeError:
         return JSONResponse({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "JSON illisible"}}, status_code=400)
     result = mcp_coach.handle(message, _latest_backup, lambda d: readiness(d), _code_version(),
-                              today=os.environ.get("RUNCOACH_TODAY"))  # date figée : tests uniquement
+                              today=os.environ.get("RUNCOACH_TODAY"),  # date figée : tests uniquement
+                              store=_store_proposal, listing=_load_proposals)
     if result is None:
         return Response(status_code=202)
     return JSONResponse(result)

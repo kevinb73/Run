@@ -20,8 +20,8 @@ INSTRUCTIONS = (
     "Tu es le coach course à pied de l'utilisateur (francophone). Les outils lisent son plan Run Coach "
     "(remise en forme, futsal et arbitrage en parallèle), ses séances avec ressenti, cardio et calories, sa charge "
     "et sa forme Garmin. Réponds en français, de façon structurée et chiffrée, sans complaisance. Priorités : "
-    "régularité, prévention des blessures (chevilles, genoux), progression douce. Tu ne peux rien modifier : "
-    "si un changement est utile, dis à l'utilisateur quoi faire dans l'app (Pas dispo, Mes jours, Pause, Signaler une douleur)."
+    "régularité, prévention des blessures (chevilles, genoux), progression douce. Tu ne modifies rien directement : "
+    "si un changement est utile, propose-le avec l'outil proposer_modification (l'utilisateur validera dans l'app) ; pour le reste (changer ses jours, signaler une douleur), dis-lui quoi faire dans l'app."
 )
 
 
@@ -183,6 +183,55 @@ def tool_douleurs_et_ajustements(st: dict, args: dict, today: str) -> dict:
     return {"douleurs_signalees": pains[-15:], "ajustements_du_plan": adj, "pause": st.get("pause")}
 
 
+ACTIONS = {
+    "deplacer": "Déplacer une séance à un autre jour de la même semaine",
+    "alleger": "Alléger une séance (séance dure → footing ; footing → plus court)",
+    "sauter": "Sauter une séance",
+    "pause": "Mettre le plan en pause (maladie, blessure, vacances)",
+}
+MOTIFS = {"maladie": "illness", "blessure": "injury", "vacances": "holiday", "autre": "other"}
+
+
+def tool_proposer_modification(st: dict, args: dict, today: str, store: Callable[[dict], dict] | None = None) -> dict:
+    """Valide la proposition contre le plan, puis la dépose : l'utilisateur l'accepte ou la refuse dans l'app."""
+    action = args.get("action")
+    raison = str(args.get("raison") or "").strip()[:400]
+    if action not in ACTIONS:
+        raise ValueError(f"action inconnue : {action}")
+    if not raison:
+        raise ValueError("une raison est obligatoire (elle sera montrée à l'utilisateur)")
+    prop: dict[str, Any] = {"action": action, "raison": raison}
+    if action == "pause":
+        jours = int(args.get("jours") or 0)
+        if not 1 <= jours <= 30:
+            raise ValueError("pause : entre 1 et 30 jours")
+        prop.update(jours=jours, motif=MOTIFS.get(args.get("motif") or "autre", "other"))
+    else:
+        d = str(args.get("date") or "")
+        log = st.get("log") or {}
+        runs = [s for s in _sessions(st) if s["date"] == d and not s.get("optional") and s.get("type") not in ("strength", "race")
+                and not (log.get(s["id"]) or {}).get("done") and not (log.get(s["id"]) or {}).get("skipped")]
+        if d < today or not runs:
+            raise ValueError(f"aucune course à venir non faite le {d} (utilise profil_et_plan pour voir les séances)")
+        s = runs[0]
+        prop.update(seance_id=s["id"], date=d, titre=s.get("title"))
+        if action == "deplacer":
+            nd = str(args.get("nouvelle_date") or "")
+            w = _week_of(st, d)
+            end = (date.fromisoformat(w["start"]) + timedelta(days=6)).isoformat() if w else d
+            if not nd or nd < today or nd == d or not (w["start"] <= nd <= end):
+                raise ValueError("deplacer : nouvelle_date doit être un autre jour à venir de la même semaine")
+            prop["nouvelle_date"] = nd
+    if store:
+        prop = store(prop)
+    return {"proposition": prop, "message": "Proposition déposée. L'utilisateur doit l'accepter dans l'app Run Coach (carte « ChatGPT propose »). "
+            "L'app appliquera ses propres règles de sécurité. Dis-lui d'ouvrir l'app."}
+
+
+def tool_propositions(st: dict, args: dict, today: str, listing: Callable[[], list] | None = None) -> dict:
+    return {"propositions": (listing() if listing else [])[-10:]}
+
+
 TOOLS: dict[str, tuple[Callable, dict]] = {
     "profil_et_plan": (tool_profil_et_plan, {
         "title": "Profil et plan en cours",
@@ -200,6 +249,22 @@ TOOLS: dict[str, tuple[Callable, dict]] = {
         "title": "Forme et charge d'entraînement",
         "description": "Charge 7 jours vs moyenne 28 jours (ratio aigu/chronique), profil cardiaque, forme du jour Garmin (disponibilité, VFC, sommeil).",
         "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False}}),
+    "proposer_modification": (tool_proposer_modification, {
+        "title": "Proposer une modification du plan",
+        "description": "Dépose une proposition (déplacer / alléger / sauter une séance, ou pause) que l'utilisateur acceptera ou refusera dans l'app. "
+                       "Rien n'est modifié sans son accord. Toujours expliquer la raison. Les dates sont au format AAAA-MM-JJ.",
+        "inputSchema": {"type": "object", "properties": {
+            "action": {"type": "string", "enum": list(ACTIONS), "description": "; ".join(f"{k} = {v}" for k, v in ACTIONS.items())},
+            "date": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "description": "Date de la séance concernée (sauf pause)"},
+            "nouvelle_date": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "description": "deplacer : nouveau jour (même semaine)"},
+            "jours": {"type": "integer", "minimum": 1, "maximum": 30, "description": "pause : durée en jours"},
+            "motif": {"type": "string", "enum": list(MOTIFS), "description": "pause : motif"},
+            "raison": {"type": "string", "description": "Explication courte montrée à l'utilisateur"},
+        }, "required": ["action", "raison"], "additionalProperties": False}}),
+    "propositions": (tool_propositions, {
+        "title": "Propositions déposées",
+        "description": "Les dernières propositions et leur statut (en attente, appliquée, refusée).",
+        "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False}}),
     "douleurs_et_ajustements": (tool_douleurs_et_ajustements, {
         "title": "Douleurs et ajustements",
         "description": "Douleurs signalées (zone, intensité) et derniers ajustements automatiques du plan (raisons).",
@@ -208,15 +273,20 @@ TOOLS: dict[str, tuple[Callable, dict]] = {
 
 
 def _tool_list() -> list[dict]:
-    return [{"name": name, **meta, "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False, "title": meta["title"]}}
+    return [{"name": name, **meta, "annotations": {"readOnlyHint": name not in WRITE_TOOLS, "destructiveHint": False, "idempotentHint": False,
+                                                   "openWorldHint": False, "title": meta["title"]}}
             for name, (_, meta) in TOOLS.items()]
 
 
+WRITE_TOOLS = {"proposer_modification"}
+
+
 def handle(message: Any, load_backup: Callable[[], tuple[str | None, dict | None]], readiness: Callable[[str], dict] | None,
-           version: str, today: str | None = None) -> Any:
+           version: str, today: str | None = None, store: Callable[[dict], dict] | None = None,
+           listing: Callable[[], list] | None = None) -> Any:
     """Traite un message (ou un lot) JSON-RPC. Renvoie None pour une notification (réponse HTTP 202)."""
     if isinstance(message, list):
-        out = [r for r in (handle(m, load_backup, readiness, version, today) for m in message) if r is not None]
+        out = [r for r in (handle(m, load_backup, readiness, version, today, store, listing) for m in message) if r is not None]
         return out or None
     if not isinstance(message, dict) or message.get("jsonrpc") != "2.0":
         return {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Requête invalide"}}
@@ -247,7 +317,11 @@ def handle(message: Any, load_backup: Callable[[], tuple[str | None, dict | None
         d = today or date.today().isoformat()
         fn = TOOLS[name][0]
         try:
-            data = fn(st, params.get("arguments") or {}, d, readiness) if name == "forme_et_charge" else fn(st, params.get("arguments") or {}, d)
+            args = params.get("arguments") or {}
+            extra = {"forme_et_charge": readiness, "proposer_modification": store, "propositions": listing}
+            data = fn(st, args, d, extra[name]) if name in extra else fn(st, args, d)
+        except ValueError as exc:  # proposition invalide : explication pour que ChatGPT corrige
+            return ok({"content": [{"type": "text", "text": f"Refusé : {exc}"}], "isError": True})
         except Exception as exc:  # données inattendues : erreur lisible plutôt qu'un plantage
             return ok({"content": [{"type": "text", "text": f"Erreur de lecture des données : {exc}"}], "isError": True})
         data = {"donnees_au": saved, "aujourd_hui": d, **data}

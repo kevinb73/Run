@@ -13,6 +13,7 @@ import { bindCareBlocks, painBlock, pauseBlock } from '../care.js';
 import { VERDICT, allSessions, closeSheet, findSession, frDates, garminOn, iconOf, isRunType, onPause, persist, sessionCard, showSheet, sportIcon, state, toast, today, view, weekOf } from '../core.js';
 import { newCycle } from './onboarding.js';
 import { celebrationCard, bindCelebration } from '../achievements.js';
+import { proposalsCard, bindProposals, fetchProposals } from '../proposals.js';
 import { analyzePending, detectTestResults, pushWeek, refreshPushed, repushIfNeeded, syncActivities, toPush, weeklyCoach } from '../sync.js';
 
 /** Grand bloc « séance du jour » : ce qu'on doit voir en premier en ouvrant l'app. */
@@ -146,6 +147,7 @@ export function renderToday() {
     ${pauseBlock(t)}
     ${painBlock(t)}
     ${next ? (next.date === t ? todayHero(next, t, canMove, bonusOk) : todayState(t) + nextCard(next, t, canMove, bonusOk)) : finished}
+    ${proposalsCard(t)}
     ${celebrationCard(t)}
     ${strengthToday(t)}
     <header class="cycle-strip">${hero}</header>
@@ -174,9 +176,11 @@ export function renderToday() {
   bindCoachBlocks(t, next, makeup);
   bindCareBlocks(t);
   bindCelebration(view, renderToday);
+  bindProposals(view, renderToday);
   view.querySelector('#push-week')?.addEventListener('click', () => pushWeek({ retry: true }));
   view.querySelector('#sync-now')?.addEventListener('click', () => syncActivities(true));
   syncActivities(false).then(async () => {
+    if (await fetchProposals() && (location.hash === '' || location.hash === '#/')) renderToday();
     weeklyCoach();
     detectTestResults();
     await analyzePending();

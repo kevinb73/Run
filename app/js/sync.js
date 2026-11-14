@@ -60,7 +60,7 @@ export async function analyzePending() {
 
 // Fenêtre d'envoi automatique : aujourd'hui + 8 jours, pour qu'un samedi la sortie longue du dimanche suivant soit couverte.
 export const PUSH_DAYS = 8;
-export const toPush = (t) => allSessions().filter((s) => (!s.optional || s.type === 'strength') && s.date >= t && s.date <= addDays(t, PUSH_DAYS) && !state.log[s.id]?.done);
+export const toPush = (t) => allSessions().filter((s) => (!s.optional || s.type === 'strength') && s.date >= t && s.date <= addDays(t, PUSH_DAYS) && !state.log[s.id]?.done && !state.log[s.id]?.skipped);
 
 export async function pushSession(s) {
   const res = await api(state.garmin, 'POST', '/workouts', sessionPayload(s));
@@ -141,7 +141,7 @@ export async function refreshPushed() {
     if (info.date < t || state.log[id]?.done) continue; // séance déjà faite : on n'y touche plus
     const s = findSession(id);
     try {
-      if (s && (!s.optional || s.type === 'strength')) await pushSession(s);
+      if (s && !state.log[id]?.skipped && (!s.optional || s.type === 'strength')) await pushSession(s);
       else { await api(state.garmin, 'DELETE', `/workouts/${encodeURIComponent(id)}`); delete state.pushed[id]; persist(); }
     } catch (ex) { toast(`Montre non mise à jour : ${ex.message}`); break; }
   }

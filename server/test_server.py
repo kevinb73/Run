@@ -252,8 +252,9 @@ class McpTest(unittest.TestCase):
         n = self.c.post(self.path, json={"jsonrpc": "2.0", "method": "notifications/initialized"})
         self.assertEqual(n.status_code, 202)
         tools = self.rpc("tools/list")["result"]["tools"]
-        self.assertEqual({t["name"] for t in tools}, {"profil_et_plan", "seances_recentes", "bilan_mensuel", "forme_et_charge", "douleurs_et_ajustements"})
-        self.assertTrue(all(t["annotations"]["readOnlyHint"] for t in tools), "lecture seule")
+        self.assertEqual({t["name"] for t in tools}, {"profil_et_plan", "seances_recentes", "bilan_mensuel", "forme_et_charge", "douleurs_et_ajustements",
+                                                      "proposer_modification", "propositions"})
+        self.assertEqual([t["name"] for t in tools if not t["annotations"]["readOnlyHint"]], ["proposer_modification"], "seul outil qui écrit : la proposition")
         self.assertEqual(self.rpc("nope")["error"]["code"], -32601)
 
     def test_tools_read_backup(self):
@@ -281,3 +282,49 @@ class McpTest(unittest.TestCase):
         douleurs = self.rpc("tools/call", {"name": "douleurs_et_ajustements", "arguments": {}})["result"]["structuredContent"]
         self.assertEqual(len(douleurs["douleurs_signalees"]), 1)
         self.assertEqual(self.rpc("tools/call", {"name": "inconnu"})["error"]["code"], -32602)
+
+
+class ProposalTest(McpTest):
+    """ChatGPT dépose des propositions validées contre le plan ; l'app les liste puis les marque appliquées / refusées."""
+
+    def setUp(self):
+        super().setUp()
+        srv.PROPOSALS.unlink(missing_ok=True)
+
+    def call(self, name, args):
+        return self.rpc("tools/call", {"name": name, "arguments": args})["result"]
+
+    def test_write_tool_flagged(self):
+        tools = {t["name"]: t for t in self.rpc("tools/list")["result"]["tools"]}
+        self.assertFalse(tools["proposer_modification"]["annotations"]["readOnlyHint"])
+        self.assertTrue(tools["propositions"]["annotations"]["readOnlyHint"])
+
+    def test_propose_validate_list_decide(self):
+        plan = self.call("profil_et_plan", {})["structuredContent"]
+        nxt = next(s for s in plan["prochaines_seances"] if s["type"] in ("easy", "long"))
+        # Proposition invalide : date sans séance, raison absente, déplacement hors semaine
+        self.assertTrue(self.call("proposer_modification", {"action": "sauter", "date": nxt["date"], "raison": ""})["isError"])
+        self.assertTrue(self.call("proposer_modification", {"action": "deplacer", "date": nxt["date"], "nouvelle_date": "2027-01-01", "raison": "r"})["isError"])
+        self.assertTrue(self.call("proposer_modification", {"action": "pause", "jours": 90, "raison": "r"})["isError"])
+        # Valide
+        r = self.call("proposer_modification", {"action": "alleger", "date": nxt["date"], "raison": "Futsal la veille : on garde des jambes."})
+        self.assertFalse(r["isError"], r)
+        prop = r["structuredContent"]["proposition"]
+        self.assertEqual(prop["status"], "pending")
+        self.assertEqual(prop["seance_id"] is not None, True)
+        # L'app la voit (avec la clé), puis l'applique
+        pend = self.c.get("/proposals?status=pending", headers=self.h).json()["proposals"]
+        self.assertEqual([p["id"] for p in pend], [prop["id"]])
+        self.assertEqual(self.c.get("/proposals").status_code, 401)
+        self.assertEqual(self.c.post(f"/proposals/{prop['id']}", headers=self.h, json={"status": "applied"}).json()["status"], "applied")
+        self.assertEqual(self.c.get("/proposals?status=pending", headers=self.h).json()["proposals"], [])
+        st = self.call("propositions", {})["structuredContent"]["propositions"]
+        self.assertEqual(st[-1]["status"], "applied")
+        self.assertEqual(self.c.post("/proposals/inconnue", headers=self.h, json={"status": "refused"}).status_code, 404)
+
+    def test_max_pending(self):
+        plan = self.call("profil_et_plan", {})["structuredContent"]
+        d = plan["prochaines_seances"][0]["date"]
+        for _ in range(5):
+            self.assertFalse(self.call("proposer_modification", {"action": "sauter", "date": d, "raison": "r"})["isError"])
+        self.assertTrue(self.call("proposer_modification", {"action": "sauter", "date": d, "raison": "r"})["isError"], "pas de déluge de propositions")
