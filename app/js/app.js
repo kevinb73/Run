@@ -9,6 +9,7 @@ import { readinessAdvice, formClass, LEVEL_FR, HRV_FR } from './engine/readiness
 import { api, sessionPayload } from './garmin.js';
 import { lineChart, volumeChart as weeklyVolumeChart, progressData } from './progress.js';
 import { buildRecap } from './engine/recap.js';
+import { ICONS } from './icons.js';
 import { pausePlan, resumeEarly, PAUSE_REASONS } from './engine/pause.js';
 import { painAdvice, PAIN_ZONES, PAIN_LEVELS } from './engine/pain.js';
 import { vdotFromPerformance, predictTime } from './engine/vdot.js';
@@ -43,6 +44,7 @@ let stepIdx = 0;
 
 const view = document.getElementById('view');
 const tabbar = document.getElementById('tabbar');
+tabbar.querySelectorAll('[data-icon]').forEach((el) => { el.innerHTML = ICONS[el.dataset.icon]; });
 const today = () => todayISO();
 
 function persist() {
@@ -212,20 +214,42 @@ function newCycle() {
 /** Remplace les dates ISO d'un texte par « sam. 31 oct. ». */
 const frDates = (txt) => String(txt).replace(/\d{4}-\d{2}-\d{2}/g, (d) => dateShort(d));
 
-const iconOf = (s) => (s.type === 'sport' ? SPORTS[s.sport]?.icon : TYPE_ICON[s.type]) ?? '•';
+const sportIcon = (k) => ICONS[k === 'referee' ? 'referee' : 'futsal'];
+const iconOf = (s) => (s.type === 'sport' ? sportIcon(s.sport) : ICONS[s.type]) ?? '•';
 
 // ---------------- Aujourd'hui ----------------
 
 function sessionCard(s, { big = false } = {}) {
   const entry = state.log[s.id];
-  const status = entry?.replacedBy ? `<span class="badge done">${SPORTS[entry.replacedBy].icon}</span>` : entry?.done ? '<span class="badge done">Fait</span>' : entry?.skipped ? `<span class="badge skip">${s.optional ? 'Pas fait' : 'Sautée'}</span>` : '';
+  const status = entry?.replacedBy ? `<span class="badge done">${sportIcon(entry.replacedBy)}</span>` : entry?.done ? '<span class="badge done">Fait</span>' : entry?.skipped ? `<span class="badge skip">${s.optional ? 'Pas fait' : 'Sautée'}</span>` : '';
   return `<a class="card session-card type-${s.type} ${big ? 'big' : ''}" href="#/session/${s.id}">
     <span class="icon" aria-hidden="true">${iconOf(s)}</span>
     <span class="body">
       <span class="date">${esc(big ? dateLong(s.date) : dateShort(s.date))}</span>
       <span class="title">${esc(s.title)}</span>
-      <span class="meta">${s.optional ? 'Facultatif' : `${s.km} km · ~${hm(s.min)}`}${s.alt ? ` · ou ${SPORTS[s.alt].icon} ${SPORTS[s.alt].label.toLowerCase()}` : ''}</span>
+      <span class="meta">${s.optional ? 'Facultatif' : `${s.km} km · ~${hm(s.min)}`}${s.alt ? ` · ou ${sportIcon(s.alt)} ${SPORTS[s.alt].label.toLowerCase()}` : ''}</span>
     </span>${status}</a>`;
+}
+
+/** Grand bloc « séance du jour » : ce qu'on doit voir en premier en ouvrant l'app. */
+function todayHero(s, t, canMove) {
+  const [main, ...rest] = s.title.split(' — ');
+  const detail = rest.join(' — ');
+  const w = weekOf(s.date);
+  const E = w?.paces?.E;
+  const fr = (n) => Number(n).toLocaleString('fr-FR', { maximumFractionDigits: 1 });
+  const paceStat = ['easy', 'long'].includes(s.type) && E ? `<div><b class="range">${pace(E[0])}–${pace(E[1])}</b><span>allure /km</span></div>` : '';
+  return `<section class="today">
+    <p class="eyebrow">${s.date === t ? 'Aujourd\'hui' : 'Prochaine séance'} · ${esc(dateShort(s.date))}</p>
+    <a class="today-link" href="#/session/${s.id}">
+      <h1 class="mega">${esc(main)}</h1>
+      ${detail ? `<p class="today-detail">${esc(detail)}</p>` : ''}
+      <div class="today-stats"><div><b>${fr(s.km)}</b><span>km</span></div><div><b>${Math.round(s.min)}</b><span>min</span></div>${paceStat}</div>
+    </a>
+    ${s.alt ? `<p class="muted today-alt">ou ${sportIcon(s.alt)} ${esc(SPORTS[s.alt].label.toLowerCase())} si tu y vas</p>` : ''}
+    <a class="btn primary" href="#/session/${s.id}">Voir la séance</a>
+    ${canMove ? `<button class="btn ghost move-today" data-move="${s.id}">Faire cette séance aujourd'hui</button>` : ''}
+  </section>`;
 }
 
 function renderToday() {
@@ -257,22 +281,20 @@ function renderToday() {
   const fitness = p.mode === 'fitness';
   const weekNum = week ? week.index + 1 : 0;
   const hero = fitness
-    ? `<p class="muted">Remise en forme · ${esc(p.raceLabel)}</p>
-      <div class="countdown"><strong>${weekNum || 1}</strong><span>/ ${p.weeks.length} semaines</span></div>
-      ${!week && t < p.weeks[0].start ? `<p class="muted">Début le ${esc(dateLong(p.weeks[0].start))}</p>` : ''}
-      <p>Objectif du cycle : <strong>${esc(p.goalText)}</strong></p>`
-    : `<p class="muted">${esc(p.raceLabel)} · ${esc(dateFull(p.profile.raceDate))}</p>
-      <div class="countdown"><strong>${daysLeft}</strong><span>jours</span></div>
-      <p>Objectif visé : <strong>${duration(p.predictedGoalSec)}</strong> <span class="muted">(${pace(p.racePace)}/km)</span></p>`;
+    ? `<div class="big">${weekNum || 1}<small>/ ${p.weeks.length}</small></div>
+      <div><div class="lbl">Semaine · ${esc(p.raceLabel)}</div><div class="lbl">${week ? esc(PHASES[week.phase].label) : `Début le ${esc(dateShort(p.weeks[0].start))}`}</div></div>
+      <p class="goal">${esc(p.goalText)}</p>`
+    : `<div class="big">J-${daysLeft}</div>
+      <div><div class="lbl">${esc(p.raceLabel)} · ${esc(dateShort(p.profile.raceDate))}</div><div class="lbl">Objectif ${duration(p.predictedGoalSec)} · ${pace(p.racePace)}/km</div></div>`;
   const finished = fitness
-    ? `<section class="card"><h2>Cycle terminé 🎉</h2><p>Le cycle suivant repart de ton niveau actuel${p.profile.fitnessGoal === 'restart' ? ' : passage au mode « Courir régulièrement »' : ''}.</p><button class="btn primary" id="new-cycle">Lancer le cycle suivant</button></section>`
+    ? `<section class="card"><h2>Cycle terminé</h2><p>Le cycle suivant repart de ton niveau actuel${p.profile.fitnessGoal === 'restart' ? ' : passage au mode « Courir régulièrement »' : ''}.</p><button class="btn primary" id="new-cycle">Lancer le cycle suivant</button></section>`
     : '<section class="card"><p>Plan terminé. Bravo ! Refais le questionnaire (onglet Profil) pour un nouvel objectif.</p></section>';
+  const canMove = next && canMoveToToday(next, state.log, t) && painAdvice(p, state.log, t, state.painResolvedAt)?.level !== 'stop';
   view.innerHTML = `
-    <header class="hero">${hero}</header>
     ${pauseBlock(t)}
     ${painBlock(t)}
-    ${next ? `<h2 class="section-title">${next.date === t ? 'Aujourd\'hui' : 'Prochaine séance'}</h2>${sessionCard(next, { big: true })}
-      ${canMoveToToday(next, state.log, t) && painAdvice(p, state.log, t, state.painResolvedAt)?.level !== 'stop' ? `<button class="btn ghost move-today" data-move="${next.id}">↻ Faire cette séance aujourd'hui</button>` : ''}` : finished}
+    ${next ? todayHero(next, t, canMove) : finished}
+    <header class="cycle-strip">${hero}</header>
     ${missed.length ? `<section class="card warn"><p><strong>${missed.length} séance(s) passée(s) sans retour.</strong> Indique si tu les as faites : c'est ce qui permet d'adapter le plan.</p>${missed.map((s) => sessionCard(s)).join('')}</section>` : ''}
     ${readinessBlock(t, next)}
     ${makeupBlock(t, makeup)}
@@ -517,7 +539,7 @@ function garminTodayBlock(t) {
   const soon = toPush(t);
   const missing = soon.filter((s) => state.pushed[s.id]?.date !== s.date).length;
   const last = state.lastSync ? new Date(state.lastSync).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—';
-  return `<section class="card"><div class="row between"><h2>⌚ Garmin</h2><span class="muted small">Synchro ${last}</span></div>
+  return `<section class="card"><div class="row between"><h2>Garmin</h2><span class="muted small">Synchro ${last}</span></div>
     ${missing ? `<p class="muted">${missing} séance(s) des 9 prochains jours pas encore sur ta montre.</p><button class="btn primary" id="push-week">Envoyer sur ma montre</button>`
       : soon.length ? '<p class="muted">Les séances des 9 prochains jours sont sur ta montre ✓ (envoi automatique à chaque ouverture)</p>' : ''}
     <button class="btn ghost" id="sync-now">Récupérer mes courses</button>
@@ -559,7 +581,7 @@ async function pushWeek({ silent = false } = {}) {
   } finally {
     pushing = false;
   }
-  if (ok) toast(`${ok} séance(s) envoyée(s) sur ta montre ⌚`);
+  if (ok) toast(`${ok} séance(s) envoyée(s) sur ta montre.`);
   if (location.hash === '' || location.hash === '#/') route();
 }
 
@@ -641,15 +663,15 @@ async function syncActivities(force) {
 
 function garminSessionCard(s) {
   const t = today();
-  if (!garminOn()) return `<section class="card"><h2>⌚ Garmin</h2><p class="muted">Connecte ta montre dans l'onglet Profil pour envoyer cette séance.</p></section>`;
+  if (!garminOn()) return `<section class="card"><h2>Garmin</h2><p class="muted">Connecte ta montre dans l'onglet Profil pour envoyer cette séance.</p></section>`;
   if (state.log[s.id]?.source === 'garmin') {
     const e = state.log[s.id];
-    return `<section class="card"><h2>⌚ Données Garmin</h2><p>${e.actualKm} km · ${duration(e.durationSec)}${e.paceSecPerKm ? ` · ${pace(e.paceSecPerKm)}/km` : ''}${e.avgHr ? ` · ${e.avgHr} bpm` : ''}</p></section>`;
+    return `<section class="card"><h2>Données Garmin</h2><p>${e.actualKm} km · ${duration(e.durationSec)}${e.paceSecPerKm ? ` · ${pace(e.paceSecPerKm)}/km` : ''}${e.avgHr ? ` · ${e.avgHr} bpm` : ''}</p></section>`;
   }
   if (s.date < t) return '';
   const p = state.pushed[s.id];
   const synced = p?.date === s.date;
-  return `<section class="card"><h2>⌚ Garmin</h2>
+  return `<section class="card"><h2>Garmin</h2>
     <p class="muted">${synced ? `Sur ta montre le ${esc(dateShort(s.date))} ✓` : 'Pas encore sur ta montre.'}</p>
     <button class="btn ${synced ? '' : 'primary'}" id="push-one">${synced ? 'Renvoyer' : 'Envoyer vers ma montre'}</button></section>`;
 }
@@ -657,14 +679,14 @@ function garminSessionCard(s) {
 function garminProfileCard() {
   const g = state.garmin;
   if (!g?.url) {
-    return `<section class="card"><h2>⌚ Montre Garmin</h2>
+    return `<section class="card"><h2>Montre Garmin</h2>
       <p class="muted">Colle l'adresse et la clé de ton serveur de synchronisation.</p>
       <form id="g-server"><label class="field">Adresse du serveur<input type="url" name="url" placeholder="https://…" required></label>
       <label class="field">Clé d'accès<input type="password" name="key" required autocomplete="off"></label>
       <p class="error"></p><button class="btn primary" type="submit">Enregistrer</button></form></section>`;
   }
   if (!g.connected) {
-    return `<section class="card"><h2>⌚ Montre Garmin</h2>
+    return `<section class="card"><h2>Montre Garmin</h2>
       <p class="muted">Serveur OK. Connecte ton compte Garmin Connect (une seule fois : ton mot de passe n'est pas conservé, seul un jeton de connexion l'est).</p>
       <form id="g-login"><label class="field">E-mail Garmin<input type="email" name="email" required autocomplete="username"></label>
       <label class="field">Mot de passe Garmin<input type="password" name="password" required autocomplete="current-password"></label>
@@ -674,7 +696,7 @@ function garminProfileCard() {
       <button class="btn ghost" id="g-forget">Changer de serveur</button></section>`;
   }
   const hr = state.hr;
-  return `<section class="card"><h2>⌚ Montre Garmin</h2><p>Connecté${g.name ? ` : <strong>${esc(g.name)}</strong>` : ''} ✓</p>
+  return `<section class="card"><h2>Montre Garmin</h2><p>Connecté${g.name ? ` : <strong>${esc(g.name)}</strong>` : ''} ✓</p>
     ${hr?.maxHr ? `<p class="muted">Profil cardiaque Garmin : FC max ${hr.maxHr}${hr.restHr ? ` · repos ${hr.restHr}` : ''}${hr.lthr ? ` · seuil ${hr.lthr}` : ''} bpm. Il sert à juger si tes footings sont vraiment faciles.</p>`
       : '<p class="muted">Profil cardiaque pas encore récupéré (FC max / repos) : il le sera à la prochaine synchronisation.</p>'}
     <p class="muted small">Les séances des 9 prochains jours partent automatiquement sur ta montre. Chaque lundi, l'app fait le bilan de ta semaine (allure, cœur, ressenti) et ajuste la suite.</p>
@@ -708,7 +730,7 @@ function bindGarminProfile() {
       if (r.mfa) { f.hidden = true; view.querySelector('#g-mfa').hidden = false; return; }
       state.garmin = { ...state.garmin, connected: true, name: r.name };
       persist();
-      toast('Compte Garmin connecté ⌚');
+      toast('Compte Garmin connecté.');
       refreshHr(true);
       renderProfile();
     } catch (ex) { err(f, ex.message); } finally { btn.disabled = false; btn.textContent = 'Connecter mon compte'; }
@@ -720,7 +742,7 @@ function bindGarminProfile() {
       const r = await api(state.garmin, 'POST', '/garmin/mfa', { code: f.code.value });
       state.garmin = { ...state.garmin, connected: true, name: r.name };
       persist();
-      toast('Compte Garmin connecté ⌚');
+      toast('Compte Garmin connecté.');
       renderProfile();
     } catch (ex) { err(f, ex.message); }
   });
@@ -836,7 +858,7 @@ function renderSession(id) {
     <h1>${esc(s.title)}</h1>
     ${s.optional ? '<p class="big-meta">Facultatif</p>' : `<p class="big-meta">${s.km} km · ~${hm(s.min)}</p>`}
     <p>${esc(s.description)}</p>
-    ${s.alt ? `<section class="card alt-note"><p><strong>${SPORTS[s.alt].icon} Jour de ${SPORTS[s.alt].label.toLowerCase()} possible.</strong> Tu fais <strong>l'un ou l'autre</strong>, pas les deux. Si tu vas au ${SPORTS[s.alt].label.toLowerCase()}, indique-le ci-dessous : la séance sera comptée comme remplacée.</p></section>` : ''}
+    ${s.alt ? `<section class="card alt-note"><p><strong>${sportIcon(s.alt)} Jour de ${SPORTS[s.alt].label.toLowerCase()} possible.</strong> Tu fais <strong>l'un ou l'autre</strong>, pas les deux. Si tu vas au ${SPORTS[s.alt].label.toLowerCase()}, indique-le ci-dessous : la séance sera comptée comme remplacée.</p></section>` : ''}
     ${s.steps.length ? stepsHTML(s.steps) : ''}
     ${canMoveToToday(s, state.log, t) ? `<button class="btn move-today" data-move="${s.id}">↻ Faire cette séance aujourd'hui</button>` : ''}
     ${s.movedFrom && s.movedFrom !== s.date ? `<p class="muted small">Déplacée (prévue initialement le ${esc(dateShort(s.movedFrom))}).</p>` : ''}
@@ -861,7 +883,7 @@ function renderSession(id) {
           <button type="button" class="btn ghost" id="skip">${e.skipped ? 'Annuler' : s.optional ? 'Pas cette fois' : 'Pas faite'}</button>
           <button type="submit" class="btn primary">${e.done && !e.replacedBy ? 'Mettre à jour' : s.optional ? 'J\'y suis allé' : 'Séance faite'}</button>
         </div>
-        ${s.alt ? `<button type="button" class="btn alt-btn" id="replaced">${SPORTS[s.alt].icon} ${e.replacedBy ? `${SPORTS[s.alt].label} enregistré` : `J'ai fait du ${SPORTS[s.alt].label.toLowerCase()} à la place`}</button>` : ''}
+        ${s.alt ? `<button type="button" class="btn alt-btn" id="replaced">${sportIcon(s.alt)} ${e.replacedBy ? `${SPORTS[s.alt].label} enregistré` : `J'ai fait du ${SPORTS[s.alt].label.toLowerCase()} à la place`}</button>` : ''}
       </form>
     </section>` : '<p class="muted center">Tu pourras saisir ton retour le jour de la séance.</p>'}`;
   const form = view.querySelector('#log-form');
@@ -887,7 +909,7 @@ function renderSession(id) {
     if (!feel) { toast(`Indique ton ressenti sur le ${SPORTS[s.alt].label.toLowerCase()}.`); return; }
     state.log[id] = { done: true, replacedBy: s.alt, feel, actualKm: 0, note: form.note.value.trim() || undefined, at: t };
     persist();
-    toast(`${SPORTS[s.alt].label} enregistré ${SPORTS[s.alt].icon}`);
+    toast(`${SPORTS[s.alt].label} enregistré.`);
     history.back();
   });
   view.querySelector('#skip')?.addEventListener('click', () => {
@@ -1183,7 +1205,7 @@ function renderProfile() {
         <button class="btn" id="redo">Refaire le questionnaire</button>
       </div>
     </section>
-    <p class="muted center small">Run Coach · v0.15</p>`;
+    <p class="muted center small">Run Coach · v0.16</p>`;
 
   bindGarminProfile();
   view.querySelector('#pause-btn')?.addEventListener('click', pauseSheet);

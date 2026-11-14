@@ -2,6 +2,7 @@
 
 import { esc, DAYS_SHORT, dayName, duration, dateFull } from './format.js';
 import { RACES, FITNESS_GOALS, SPORTS } from './engine/plan.js';
+import { ICONS } from './icons.js';
 import { addDays, todayISO } from './engine/dates.js';
 
 const LEVELS = [
@@ -192,7 +193,7 @@ export const STEPS = [
     title: 'Pratiques-tu un autre sport ?',
     render: (d) => `<p class="lead">Coche les jours <strong>possibles</strong>, même si tu n'y vas pas chaque semaine. Le plan évitera de te mettre une séance dure le lendemain.</p>
       ${Object.entries(SPORTS).map(([kind, sp]) => `
-        <p class="field">${sp.icon} ${sp.label}</p>
+        <p class="field">${ICONS[kind === 'referee' ? 'referee' : 'futsal']} ${sp.label}</p>
         <div class="days">${DAYS_SHORT.map((n, i) => `
           <label class="day"><input type="checkbox" name="sp-${kind}" value="${i}" ${d.otherSports.some((x) => x.kind === kind && x.day === i) ? 'checked' : ''}><span>${n}</span></label>`).join('')}</div>`).join('')}
       <p class="hint">Aucun autre sport ? Laisse tout décoché et continue.</p>`,
@@ -208,7 +209,7 @@ export const STEPS = [
       const min = minDays(d);
       return `<p class="lead">${isRestart(d) ? '3 séances par semaine suffisent en reprise : choisis au moins 3 jours, l\'app gardera les mieux espacés.' : `${min} à 6 jours. Le nombre de jours = le nombre de courses par semaine.`}</p>
       <div class="days">${DAYS_SHORT.map((n, i) => `
-        <label class="day ${busy.has(i) ? 'busy' : ''}"><input type="checkbox" name="day" value="${i}" ${d.days.includes(i) ? 'checked' : ''}><span>${n}${busy.has(i) ? `<i>${SPORTS[d.otherSports.find((x) => x.day === i).kind].icon}</i>` : ''}</span></label>`).join('')}</div>
+        <label class="day ${busy.has(i) ? 'busy' : ''}"><input type="checkbox" name="day" value="${i}" ${d.days.includes(i) ? 'checked' : ''}><span>${n}${busy.has(i) ? `<i>${ICONS[d.otherSports.find((x) => x.day === i).kind === 'referee' ? 'referee' : 'futsal']}</i>` : ''}</span></label>`).join('')}</div>
       ${busy.size ? '<p class="hint">Tu peux aussi cocher un jour de futsal/arbitrage : ce jour-là, tu feras <strong>soit la course, soit ton sport</strong>. Le plan n\'y mettra jamais de séance dure.</p>' : ''}
       ${isFitness(d) && !isRestart(d) && busy.size ? '<p class="hint">Avec ton autre sport, 2 courses par semaine suffisent pour progresser en endurance.</p>' : ''}`;
     },

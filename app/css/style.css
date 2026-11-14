@@ -1,38 +1,35 @@
-:root {
-  --bg: #f6f7f9;
-  --surface: #ffffff;
-  --surface-2: #eef0f3;
-  --text: #14171c;
-  --muted: #687080;
-  --border: #dde1e7;
-  --accent: #ff5a1f;
-  --accent-ink: #ffffff;
-  --ok: #1f9d55;
-  --warn: #c77700;
-  --z-e: #3b82f6;
-  --z-m: #14b8a6;
-  --z-t: #eab308;
-  --z-i: #f97316;
-  --z-r: #ef4444;
-  --z-race: #a855f7;
-  --radius: 16px;
-  --shadow: 0 1px 2px rgb(0 0 0 / 0.05), 0 4px 16px rgb(0 0 0 / 0.04);
-  color-scheme: light dark;
-}
+/* Identité « Run Coach » : noir, blanc, une seule touche volt (style Nike Run Club). */
+@font-face { font-family: 'Anton'; src: url(../fonts/anton-400.woff2) format('woff2'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'Inter'; src: url(../fonts/inter-400.woff2) format('woff2'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'Inter'; src: url(../fonts/inter-600.woff2) format('woff2'); font-weight: 600; font-display: swap; }
+@font-face { font-family: 'Inter'; src: url(../fonts/inter-800.woff2) format('woff2'); font-weight: 700 900; font-display: swap; }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0f1115;
-    --surface: #181b21;
-    --surface-2: #22262e;
-    --text: #eef0f4;
-    --muted: #8f97a6;
-    --border: #2b3039;
-    --shadow: none;
-  }
+:root {
+  --bg: #000000;
+  --surface: #111111;
+  --surface-2: #1c1c1c;
+  --text: #ffffff;
+  --muted: #8d8d8d;
+  --border: #242424;
+  --accent: #d7ff1f;
+  --accent-ink: #000000;
+  --ok: #d7ff1f;
+  --warn: #ff9f0a;
+  --danger: #ff453a;
+  --z-e: #5ac8fa;
+  --z-m: #64d2ff;
+  --z-t: #ffd60a;
+  --z-i: #ff9f0a;
+  --z-r: #ff453a;
+  --z-race: #bf5af2;
+  --radius: 8px;
+  --shadow: none;
+  --display: 'Anton', 'Impact', sans-serif;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 
 html { -webkit-text-size-adjust: 100%; }
 
@@ -40,7 +37,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 16px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  font: 16px/1.45 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
 }
@@ -347,3 +344,92 @@ a { color: inherit; }
 .field-label { font-weight: 600; margin: 12px 0 0; }
 .pain-levels { grid-template-columns: repeat(4, 1fr) !important; margin: 8px 0; }
 .field select { width: 100%; min-height: 46px; margin-top: 6px; padding: 8px 12px; border-radius: 12px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text); font: inherit; }
+
+/* ================= Style Run Coach (NRC) ================= */
+h1 { font-family: var(--display); font-weight: 400; text-transform: uppercase; letter-spacing: 0; font-size: 2.4rem; line-height: 1; }
+h2 { font-weight: 800; }
+.card { background: var(--surface); border: none; border-radius: var(--radius); }
+.card h2 { text-transform: uppercase; letter-spacing: 0.12em; font-size: 0.72rem; color: var(--muted); font-weight: 600; }
+.card.warn { box-shadow: inset 3px 0 0 var(--warn); }
+.card.danger { box-shadow: inset 3px 0 0 var(--danger); }
+.card.note { background: transparent; border: 1px solid var(--border); color: var(--muted); }
+.muted { color: var(--muted); }
+.section-title { color: var(--muted); letter-spacing: 0.18em; font-size: 0.7rem; font-weight: 600; }
+
+.btn { border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2); font-weight: 700; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border: none; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 800; }
+.btn.ghost { background: transparent; }
+
+/* Séance du jour : le cœur de l'écran */
+.today { padding: 4px 0 18px; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+.eyebrow { color: var(--muted); text-transform: uppercase; letter-spacing: 0.16em; font-size: 0.72rem; font-weight: 600; margin: 4px 0 6px; }
+.today-link { text-decoration: none; display: block; }
+.mega { font-family: var(--display); font-size: clamp(3.4rem, 17vw, 5.2rem); line-height: 0.92; text-transform: uppercase; margin: 6px 0 4px; letter-spacing: -0.005em; word-break: break-word; }
+.today-detail { font-family: var(--display); font-size: 1.6rem; text-transform: uppercase; color: var(--accent); margin: 2px 0 6px; line-height: 1.05; }
+.today-stats { display: flex; gap: 28px; margin: 14px 0 18px; }
+.today-stats .range { font-size: 1.35rem; padding-top: 0.45rem; }
+.today-stats b { display: block; font-size: 2rem; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.today-stats span { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; }
+.today .btn.primary { width: 100%; min-height: 54px; }
+.today .move-today { width: 100%; margin-top: 10px; border-color: var(--border); }
+.today-alt { display: flex; align-items: center; gap: 6px; margin: -6px 0 14px; }
+
+/* Bandeau du cycle */
+.cycle-strip { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; align-items: center; padding: 14px 0; }
+.cycle-strip .big { font-family: var(--display); font-size: 3rem; line-height: 0.9; }
+.cycle-strip .big small { font-family: 'Inter'; font-size: 0.9rem; color: var(--muted); font-weight: 600; margin-left: 4px; }
+.cycle-strip .lbl { text-transform: uppercase; letter-spacing: 0.12em; font-size: 0.7rem; color: var(--muted); font-weight: 600; }
+.cycle-strip .goal { grid-column: 1 / -1; color: var(--text); font-weight: 600; margin: 4px 0 0; }
+
+/* Cartes de séance */
+.session-card .icon { background: var(--surface-2) !important; color: var(--text) !important; border-radius: 50%; font-size: 1.25rem !important; }
+.session-card.type-race .icon, .session-card.type-test .icon { color: var(--accent) !important; }
+.session-card .title { font-weight: 700; }
+.week-sessions .session-card { background: var(--surface-2); }
+.badge.done { background: var(--accent); color: var(--accent-ink); }
+.badge.done svg { width: 14px; height: 14px; vertical-align: -2px; }
+
+/* Semaine */
+.meter { height: 4px; background: var(--surface-2); } .meter div { background: var(--accent); }
+.dot { width: 12px !important; height: 12px !important; padding: 0; border-width: 2px; border-radius: 50%; font-size: 0 !important; line-height: 0; background: var(--surface-2); overflow: hidden; }
+.dot svg { display: none; }
+.dot.done { background: var(--accent); } .dot.today { border-color: #fff; } .dot.missed { opacity: 0.35; }
+.phase { background: transparent; border: 1px solid var(--border); color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.68rem; }
+
+/* Verdicts et badges : sobres */
+.verdict { background: transparent !important; padding: 0; font-weight: 700; }
+.verdict.ok { color: var(--accent); } .verdict.bad { color: var(--danger); } .verdict.up { color: var(--z-e); }
+
+/* Plan */
+.phase-head { border-left-width: 3px; }
+.phase-head h2 { font-family: var(--display); font-weight: 400; text-transform: uppercase; font-size: 1.6rem; }
+.week { background: var(--surface); border: none; border-radius: var(--radius); }
+.week.current { box-shadow: inset 3px 0 0 var(--accent); }
+.volume-chart .bar { opacity: 0.35; background: var(--muted); }
+.volume-chart .bar.current { opacity: 1; background: var(--accent); outline: none; }
+
+/* Séance détaillée */
+.big-meta { font-family: var(--display); font-size: 1.8rem; font-weight: 400; color: var(--accent); }
+.step { background: var(--surface); }
+.repeat .times { font-family: var(--display); font-size: 1.5rem; color: var(--accent); }
+
+/* Progrès & récap */
+.tile-value, .stat-value { font-family: var(--display); font-weight: 400; font-size: 1.8rem; letter-spacing: 0; }
+.chart .line { stroke: var(--accent); } .chart .dot { fill: var(--accent); stroke: var(--bg); }
+.chart .bar { fill: var(--accent); } .chart .bar-ghost { fill: var(--surface-2); }
+.recap-conclusion { box-shadow: inset 3px 0 0 var(--accent); border: none; }
+
+/* Questionnaire */
+.choice span, .day span { background: var(--surface); border-color: var(--border); }
+.choice input:checked + span, .day input:checked + span { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+.progress div { background: var(--accent); }
+.day span i svg { width: 12px; height: 12px; }
+
+/* Barre d'onglets */
+.tabbar { background: rgba(0, 0, 0, 0.92); border-top: 1px solid var(--border); }
+.tabbar a { color: #6b6b6b; font-weight: 600; }
+.tabbar a span { font-size: 1.35rem; display: flex; }
+.tabbar a.active { color: #fff; }
+.tabbar a.active span { color: var(--accent); }
+.toast { background: var(--accent); color: var(--accent-ink); }
+svg { flex: none; }
