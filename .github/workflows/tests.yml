@@ -30,7 +30,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -r server/requirements.txt
+      - run: pip install -r server/requirements-test.txt
       - run: python -m unittest server/test_server.py
 
   parcours-iphone:
@@ -43,7 +43,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -r server/requirements.txt
+      - run: pip install -r server/requirements-test.txt
       - run: npm install --no-save playwright@1.63.0
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e

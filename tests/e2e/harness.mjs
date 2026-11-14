@@ -26,10 +26,12 @@ export async function startServers() {
   const py = spawn('python3', [join(ROOT, 'tests', 'e2e', 'fake_garmin.py'), String(GARMIN_PORT)], {
     env: { ...process.env, RUNCOACH_ORIGINS: APP }, stdio: ['ignore', 'inherit', 'inherit'],
   });
-  for (let i = 0; i < 60; i++) {
-    try { if ((await fetch(`${GARMIN}/health`)).ok) break; } catch { /* démarrage */ }
-    await new Promise((r) => setTimeout(r, 250));
+  let up = false;
+  for (let i = 0; i < 120 && !up; i++) {
+    try { up = (await fetch(`${GARMIN}/health`)).ok; } catch { /* démarrage */ }
+    if (!up) await new Promise((r) => setTimeout(r, 250));
   }
+  if (!up) throw new Error('Le faux serveur Garmin n\'a pas démarré (dépendances : pip install -r server/requirements-test.txt).');
   const browser = await chromium.launch();
   return { browser, async stop() { await browser.close(); web.close(); py.kill(); } };
 }
