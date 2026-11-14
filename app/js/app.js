@@ -27,7 +27,7 @@ export function maybeUpgradePlan() {
   }
 }
 
-export /** Début de mois : le bilan du mois écoulé s'affiche une fois. */
+/** Début de mois : le bilan du mois écoulé s'affiche une fois. */
 function maybeMonthlyRecap() {
   const t = today();
   if (Number(t.slice(8, 10)) > 7) return;
@@ -44,7 +44,7 @@ function maybeMonthlyRecap() {
   }), 400);
 }
 
-function route() {
+export function route() {
   const hash = location.hash.slice(1) || '/';
   const [, page, arg] = hash.split('/');
   if (!state.plan && page !== 'onboarding') { location.replace('#/onboarding'); return; }
