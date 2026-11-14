@@ -666,3 +666,35 @@ test('bilan mensuel : course, futsal, arbitrage, renfo, calories, sans double co
   assert.deepEqual(availableMonths({ plan, acts }, '2026-12-05'), ['2026-10', '2026-11', '2026-12']);
   assert.equal(monthLabel('2026-11'), 'novembre 2026');
 });
+
+test('records, jalons, série : calcul et nouveautés à célébrer', async () => {
+  const { computeRecords, newAchievements, streak } = await import('../app/js/engine/records.js');
+  const plan = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, weeklyKm: 5, longestRunKm: 3, days: [0, 3, 6], longRunDay: 6 }, { today: TODAY });
+  const acts = {
+    1: { id: 1, date: '2026-11-14', type: 'running', distanceKm: 2.6, durationSec: 1290, paceSecPerKm: 496 },
+    2: { id: 2, date: '2026-11-16', type: 'running', distanceKm: 2.3, durationSec: 1260 },
+    3: { id: 3, date: '2026-11-22', type: 'running', distanceKm: 3.4, durationSec: 1830, paceSecPerKm: 538 },
+    4: { id: 4, date: '2026-11-21', type: 'running', distanceKm: 9, durationSec: 5400 }, // arbitrage
+    5: { id: 5, date: '2026-11-18', type: 'indoor_soccer', durationSec: 3600 },
+  };
+  const ref = plan.weeks[0].sessions.find((s) => s.sport === 'referee') ?? { id: 'x' };
+  const st = { plan, log: {}, acts, known: { 4: ref.id } };
+  if (ref.id === 'x') delete acts[4];
+  const r = computeRecords(st, '2026-11-23');
+  assert.equal(r.records.longestKm.value, 3.4);
+  assert.equal(r.records.longestKm.prev, 2.6);
+  assert.equal(r.records.bestPace.value, 496);
+  assert.ok(!r.records.best5k, 'pas de 5 km estimé sans sortie de 5 km');
+  assert.equal(r.milestones.find((m) => m.key === 'run20').date, '2026-11-14');
+  assert.equal(r.milestones.find((m) => m.key === 'run30').date, '2026-11-22');
+  const news = newAchievements(st, '2026-11-22', {}, '2026-11-23');
+  assert.ok(news.some((n) => n.id === 'longestKm:2026-11-22'));
+  assert.ok(news.some((n) => n.id === 'run30:2026-11-22'));
+  assert.ok(!news.some((n) => n.key === 'bestPace'), 'pas de record d\'allure ce jour-là');
+  assert.equal(newAchievements(st, '2026-11-22', Object.fromEntries(news.map((n) => [n.id, true])), '2026-11-23').length, 0, 'vu = plus annoncé');
+  // Série : 2 semaines complètes puis une ratée
+  const log = {};
+  for (const w of plan.weeks.slice(0, 2)) for (const s of w.sessions) if (!s.optional && s.type !== 'strength') log[s.id] = { done: true };
+  assert.deepEqual(streak({ plan, log }, addDaysT(plan.weeks[2].start, 2)), { current: 2, best: 2 });
+  assert.deepEqual(streak({ plan, log }, addDaysT(plan.weeks[3].start, 2)), { current: 0, best: 2 });
+});

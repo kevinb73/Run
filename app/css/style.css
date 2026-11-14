@@ -468,3 +468,14 @@ svg { flex: none; }
 .month-rows li span:last-child { color: var(--muted); text-align: right; }
 .monthly .coach-quote { margin-top: 12px; }
 .monthly .coach-quote p { margin: 4px 0; }
+/* Records, série, jalons */
+.celebrate { box-shadow: inset 3px 0 0 var(--accent); }
+.celebrate p { margin: 6px 0; }
+.celebrate .btn { margin-top: 8px; }
+.streak { display: flex; align-items: center; gap: 14px; margin: 8px 0 4px; }
+.streak-n { font-family: var(--display); font-size: 3rem; line-height: 1; color: var(--accent); }
+.streak small { display: block; font-size: 0.8rem; margin-top: 2px; }
+.next-milestone { margin: 12px 0 8px; }
+.milestones { display: flex; flex-wrap: wrap; gap: 6px; }
+.ms { border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px; font-size: 0.8rem; color: var(--muted); }
+.ms.done { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); color: var(--text); }

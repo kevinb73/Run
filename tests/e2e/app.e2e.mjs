@@ -175,6 +175,24 @@ test('bilan mensuel : carte dans Progrès, fenêtre le 1er du mois suivant (une 
   noErrors(p);
 });
 
+test('records : célébration sur Aujourd\'hui (une fois), carte dans Progrès', async () => {
+  const p = await newPage(env.browser);
+  await seed(p, {
+    now: '2026-11-22T20:00:00',
+    mutate: `st.acts = { 1: { id: 1, date: '2026-11-14', type: 'running', distanceKm: 2.6, durationSec: 1290, paceSecPerKm: 496 },
+      3: { id: 3, date: '2026-11-22', type: 'running', distanceKm: 3.4, durationSec: 1830, paceSecPerKm: 538 } };`,
+  });
+  assert.ok(await p.locator('#celebrate').count(), 'carte de célébration');
+  const txt = await p.locator('#celebrate').innerText();
+  assert.match(txt, /Plus longue sortie/); assert.match(txt, /30 min de course/);
+  await p.click('#celebrate-ok'); await p.waitForTimeout(300);
+  assert.equal(await p.locator('#celebrate').count(), 0, 'disparaît une fois vue');
+  await p.evaluate(() => { location.hash = '#/progress'; }); await p.waitForTimeout(400);
+  const rec = await p.locator('.records').innerText();
+  assert.match(rec, /3,4 km/); assert.match(rec, /Prochain cap/);
+  noErrors(p);
+});
+
 test('toutes les pages s\'ouvrent sans erreur', async () => {
   const p = await newPage(env.browser);
   await seed(p);

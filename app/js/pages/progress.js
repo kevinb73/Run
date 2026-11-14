@@ -2,6 +2,7 @@ import { lineChart, volumeChart as weeklyVolumeChart, progressData } from '../pr
 import { esc, duration, dateShort, pace } from '../format.js';
 import { monthlySummary, availableMonths, monthLabel } from '../engine/monthly.js';
 import { state, today, view } from '../core.js';
+import { recordsCard } from '../achievements.js';
 
 export function renderProgress() {
   const t = today();
@@ -11,6 +12,7 @@ export function renderProgress() {
     ? (d.eff.slice(-3).reduce((a, x) => a + x.y, 0) / 3) / (d.eff.slice(0, 3).reduce((a, x) => a + x.y, 0) / 3) - 1 : null;
   view.innerHTML = `<h1>Progrès</h1>
     ${monthlyCard(t)}
+    ${recordsCard(t)}
     <div class="tiles">
       <div class="tile"><span class="tile-value">${d.regularity == null ? '—' : Math.round(d.regularity * 100) + ' %'}</span><span class="tile-label">séances faites</span></div>
       <div class="tile"><span class="tile-value">${Math.round(d.totalKm)}</span><span class="tile-label">km courus</span></div>

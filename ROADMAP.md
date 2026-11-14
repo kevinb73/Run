@@ -143,6 +143,7 @@ Niche la plus prometteuse : **préparation physique des arbitres** (tests obliga
 | v0.29 | Code découpé en modules (routeur, état, Garmin, un fichier par écran) ; parcours iPhone simulés dans le dépôt, lancés sur chaque PR |
 | v0.30 | « Pas dispo ce jour-là » : meilleurs jours de remplacement dans la semaine (règles de sécurité), ou sauter la séance |
 | v0.31 | Bilan mensuel (Progrès) : km, temps, calories, séances par activité (course, futsal, arbitrage, renfo), comparaison au mois précédent, mot du coach ; fenêtre automatique en début de mois |
+| v0.32 | Records personnels (plus longue sortie / durée, meilleure allure, 5 km estimé), caps (20/30/45/60 min, 5/10 km, cumuls), série de semaines régulières ; célébration sur Aujourd'hui ; test statique des liens entre modules |
 
 ## Coûts récurrents
 
