@@ -110,7 +110,9 @@ class ApiTest(unittest.TestCase):
         self.h = {"X-Api-Key": "test-key"}
 
     def test_auth_required(self):
-        self.assertEqual(self.c.get("/health").status_code, 200)
+        h = self.c.get("/health")
+        self.assertEqual(h.status_code, 200)
+        self.assertTrue(h.json()["version"])
         self.assertEqual(self.c.get("/garmin/status").status_code, 401)
         self.assertEqual(self.c.get("/garmin/status", headers={"X-Api-Key": "nope"}).status_code, 401)
         self.assertTrue(self.c.get("/garmin/status", headers=self.h).json()["connected"])

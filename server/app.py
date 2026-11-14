@@ -106,9 +106,23 @@ def garmin_call(fn, *args, **kwargs):
 
 # ---------------------------------------------------------------- santé & connexion
 
+def _code_version() -> str:
+    """Commit du code en service (pour vérifier que le serveur s'est bien mis à jour)."""
+    try:
+        import subprocess
+        out = subprocess.run(["git", "-c", "safe.directory=*", "-C", str(Path(__file__).resolve().parent.parent), "log", "-1", "--format=%h %cs"],
+                             capture_output=True, text=True, timeout=5)
+        return out.stdout.strip() or "inconnue"
+    except Exception:
+        return "inconnue"
+
+
+CODE_VERSION = _code_version()
+
+
 @app.get("/health")
 def health() -> dict[str, Any]:
-    return {"ok": True, "service": "runcoach-sync"}
+    return {"ok": True, "service": "runcoach-sync", "version": CODE_VERSION}
 
 
 @app.get("/garmin/status", dependencies=[Depends(require_key)])
