@@ -371,7 +371,7 @@ h2 { font-weight: 800; }
 .today-stats b { display: block; font-size: 2rem; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.1; }
 .today-stats span { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; }
 /* Bouton sobre sur cet écran : le volt plein sur toute la largeur agressait l'œil. */
-.today .btn.primary { width: 100%; min-height: 50px; background: #fff; color: #000; }
+.today .btn.primary { width: 100%; min-height: 50px; background: var(--surface-2); color: #fff; border: 1px solid var(--border); }
 .today .move-today { width: 100%; margin-top: 10px; border-color: var(--border); }
 .today-alt { display: flex; align-items: center; gap: 6px; margin: -6px 0 14px; }
 
