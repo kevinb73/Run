@@ -256,3 +256,98 @@ test('test court très au-dessus du niveau : hausse plafonnée à +3', () => {
   const { adjustment: a2 } = adaptPlan(reg, {}, '2026-12-29', { distanceM: 10000, timeSec: 52 * 60 });
   assert.ok(a2.vdotAfter - a2.vdotBefore > 3);
 });
+
+test('analyse : répétitions lues tour par tour, verdict et ajustement de la séance suivante', async () => {
+  const { analyzeSession, applyVerdict, flattenSteps } = await import('../app/js/engine/analysis.js');
+  const plan = generatePlan({ ...base, level: 'advanced', days: [1, 2, 3, 5, 6], longRunDay: 6 }, { today: TODAY });
+  const all = plan.weeks.flatMap((w) => w.sessions);
+  const thr = all.filter((s) => s.type === 'threshold');
+  const s = thr[2];
+  const week = plan.weeks.find((w) => w.sessions.includes(s));
+  const flat = flattenSteps(s.steps);
+  const lapsFor = (offset) => flat.map((st) => {
+    const pace = st.pace ? (st.pace[0] + st.pace[1]) / 2 + (st.kind === 'run' && st.zone === 'T' ? offset : 0) : 420;
+    const durationSec = st.dur.type === 'time' ? st.dur.s : (st.dur.m / 1000) * pace;
+    return { durationSec, distanceM: st.dur.type === 'distance' ? st.dur.m : (durationSec / pace) * 1000, avgHr: 150 };
+  });
+  // Dans la cible → réussie
+  assert.equal(analyzeSession(s, { feel: 'ok' }, lapsFor(0), week.paces).verdict, 'success');
+  // 15 s/km trop lent sur toutes les répétitions → trop dure, la suivante ne progresse pas
+  const hard = analyzeSession(s, { feel: 'hard' }, lapsFor(15), week.paces);
+  assert.equal(hard.verdict, 'hard');
+  const next = thr.find((x) => x.date > s.date);
+  const r = applyVerdict(plan, {}, s.id, 'hard');
+  const adjusted = r.plan.weeks.flatMap((w) => w.sessions).find((x) => x.id === next.id);
+  assert.ok(adjusted.level <= s.level, 'pas de progression après une séance ratée');
+  // Plus vite que la cible + ressenti facile → trop facile, la suivante progresse
+  assert.equal(analyzeSession(s, { feel: 'easy' }, lapsFor(-15), week.paces).verdict, 'easy');
+  const r2 = applyVerdict(plan, {}, s.id, 'easy');
+  assert.ok(r2.plan.weeks.flatMap((w) => w.sessions).find((x) => x.id === next.id).level > next.level);
+  // Sans tours : ressenti
+  assert.equal(analyzeSession(s, { feel: 'hard' }, null, week.paces).source, 'feel');
+});
+
+test('analyse : footing trop rapide et dérive cardiaque de la sortie longue', async () => {
+  const { analyzeSession } = await import('../app/js/engine/analysis.js');
+  const plan = generatePlan(base, { today: TODAY });
+  const w = plan.weeks[3];
+  const easy = w.sessions.find((s) => s.type === 'easy');
+  assert.equal(analyzeSession(easy, { feel: 'ok', paceSecPerKm: w.paces.E[0] - 30 }, null, w.paces).verdict, 'fast');
+  const long = w.sessions.find((s) => s.type === 'long');
+  const laps = [140, 142, 150, 158].map((hr) => ({ distanceM: 1000, durationSec: 400, avgHr: hr }));
+  const res = analyzeSession(long, { feel: 'ok', paceSecPerKm: (w.paces.E[0] + w.paces.E[1]) / 2 }, laps, w.paces);
+  assert.ok(res.details.some((d) => d.includes('Dérive cardiaque de')));
+});
+
+test('charge : ratio aigu/chronique, futsal compris, et réduction du volume', async () => {
+  const { loadStatus, activityLoad } = await import('../app/js/engine/load.js');
+  const t = '2026-12-20';
+  const act = (date, load) => ({ date, trainingLoad: load, durationSec: 3600 });
+  const steady = [];
+  for (let d = 27; d >= 1; d -= 2) { const x = new Date('2026-12-20'); x.setUTCDate(x.getUTCDate() - d); steady.push(act(x.toISOString().slice(0, 10), 60)); }
+  assert.equal(loadStatus(steady, t).zone, 'optimal');
+  const spike = [...steady, act('2026-12-18', 250), act('2026-12-19', 250), act('2026-12-20', 200)];
+  const st = loadStatus(spike, t);
+  assert.equal(st.zone, 'high');
+  assert.equal(loadStatus([act('2026-12-19', 50)], t).ratio, null, 'pas assez d\'historique');
+  // TRIMP sans charge Garmin : plus intense = plus de charge
+  const hr = { maxHr: 190, restHr: 60 };
+  assert.ok(activityLoad({ durationSec: 3600, avgHr: 170 }, hr) > activityLoad({ durationSec: 3600, avgHr: 130 }, hr));
+  // Intégration au bilan
+  const plan = generatePlan(base, { today: TODAY });
+  const { adjustment } = adaptPlan(plan, {}, '2026-12-02', null, null, { zone: 'high', ratio: 1.7 });
+  assert.ok(adjustment.reasons.some((r) => r.includes('20 %')));
+});
+
+test('forme du jour : séance dure décalée si forme très basse', async () => {
+  const { readinessAdvice, formClass } = await import('../app/js/engine/readiness.js');
+  const hard = { type: 'threshold' }, easy = { type: 'easy' };
+  assert.equal(readinessAdvice({ score: 18 }, hard).action, 'swap');
+  assert.equal(readinessAdvice({ score: 40 }, hard).action, 'suggest');
+  assert.equal(readinessAdvice({ score: 70, hrvStatus: 'LOW' }, hard).action, 'suggest');
+  assert.equal(readinessAdvice({ score: 80 }, hard).action, 'none');
+  assert.equal(readinessAdvice({ score: 15 }, easy).action, 'shorten');
+  assert.equal(formClass({}), null);
+});
+
+test('rattrapage : séance clé manquée replacée sur un footing sûr, sinon abandonnée', async () => {
+  const { missedKeySession, findSafeDay, makeUp } = await import('../app/js/engine/reschedule.js');
+  const plan = generatePlan({ ...base, level: 'advanced', days: [0, 1, 3, 4, 6], longRunDay: 6 }, { today: TODAY });
+  const w = plan.weeks.find((x) => x.phase === 'build' && !x.recovery);
+  const hard = w.sessions.find((s) => ['threshold', 'intervals'].includes(s.type));
+  const dayAfter = new Date(hard.date); dayAfter.setUTCDate(dayAfter.getUTCDate() + 1);
+  const today = dayAfter.toISOString().slice(0, 10);
+  const missed = missedKeySession(plan, {}, today);
+  assert.ok(missed);
+  const target = findSafeDay(plan, {}, missed.id, today);
+  if (target) {
+    const { plan: next, dropped } = makeUp(plan, {}, missed.id, target.id);
+    const ms = next.weeks.flatMap((x) => x.sessions).find((s) => s.id === missed.id);
+    assert.equal(ms.date, target.date);
+    assert.equal(dropped, target.id);
+  }
+  // Avec futsal la veille de chaque footing restant : aucun jour sûr
+  const busy = structuredClone(plan);
+  busy.profile.otherSports = [0, 1, 2, 3, 4, 5, 6].map((day) => ({ day, kind: 'futsal' }));
+  assert.equal(findSafeDay(busy, {}, missed.id, today), null);
+});

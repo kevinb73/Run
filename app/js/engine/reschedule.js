@@ -77,3 +77,50 @@ export function downgradeToEasy(plan, id) {
 function setAlt(s, kind) {
   if (kind) s.alt = kind; else delete s.alt;
 }
+
+const sportDaysOf = (plan) => [...new Set((plan.profile.otherSports ?? []).map((x) => x.day))];
+
+/**
+ * Jour de remplacement sûr pour une séance clé : un footing non fait, dans les 4 jours suivant `fromDate`
+ * et avant la fin de la semaine, ni un jour de sport possible ni son lendemain, sans séance dure la veille ou le lendemain.
+ */
+export function findSafeDay(plan, log, sessionId, fromDate) {
+  const all = plan.weeks.flatMap((w) => w.sessions);
+  const week = plan.weeks.find((w) => w.sessions.some((x) => x.id === sessionId));
+  const weekEnd = week ? addDays(week.start, 6) : addDays(fromDate, 4);
+  const limit = addDays(fromDate, 4) < weekEnd ? addDays(fromDate, 4) : weekEnd;
+  const sportDays = sportDaysOf(plan);
+  const hardOn = (d) => all.some((x) => x.date === d && x.id !== sessionId && HARD_TYPES.includes(x.type) && !log[x.id]);
+  return all
+    .filter((x) => x.type === 'easy' && !x.optional && !log[x.id] && x.date > fromDate && x.date <= limit)
+    .filter((x) => !sportDays.includes(weekday(x.date)) && !sportDays.includes((weekday(x.date) + 6) % 7))
+    .filter((x) => !hardOn(addDays(x.date, -1)) && !hardOn(addDays(x.date, 1)))
+    .sort((a, b) => a.date.localeCompare(b.date))[0] ?? null;
+}
+
+/** Séance clé (dure ou sortie longue) manquée ces 3 derniers jours, sans retour. */
+export function missedKeySession(plan, log, today) {
+  return plan.weeks.flatMap((w) => w.sessions)
+    .filter((s) => (HARD_TYPES.includes(s.type) || s.type === 'long') && !s.optional && !log[s.id]
+      && s.date < today && s.date >= addDays(today, -3))
+    .sort((a, b) => b.date.localeCompare(a.date))[0] ?? null;
+}
+
+/** Remplace le footing `target` par la séance `id` (le footing est abandonné). */
+export function makeUp(plan, log, id, targetId) {
+  const target = plan.weeks.flatMap((w) => w.sessions).find((x) => x.id === targetId);
+  const { plan: moved } = moveSession(plan, id, target.date, log);
+  return { plan: moved, dropped: targetId };
+}
+
+/** Raccourcit un footing (forme basse). */
+export function shortenEasy(plan, id, factor = 0.67) {
+  const copy = structuredClone(plan);
+  const week = copy.weeks.find((w) => w.sessions.some((x) => x.id === id));
+  const s = week.sessions.find((x) => x.id === id);
+  const easy = easyRun({ paces: week.paces }, Math.max(2, Math.round(s.km * factor * 2) / 2));
+  const est = estimate(easy.steps, week.paces);
+  Object.assign(s, easy, { km: est.km, min: est.min, shortened: true });
+  week.volumeKm = Math.round(week.sessions.reduce((a, x) => a + x.km, 0) * 10) / 10;
+  return copy;
+}

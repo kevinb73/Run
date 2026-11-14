@@ -114,6 +114,19 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(acts[0]["paceSecPerKm"], 510)
         self.assertIsNone(acts[1]["paceSecPerKm"])
 
+    def test_readiness(self):
+        self.fake.get_training_readiness = lambda d: [
+            {"timestamp": "2026-11-16T06:00", "score": 31, "level": "LOW", "sleepScore": 58, "recoveryTime": 1500},
+            {"timestamp": "2026-11-16T05:00", "score": 80, "level": "HIGH"},
+        ]
+        self.fake.get_hrv_data = lambda d: {"hrvSummary": {"status": "UNBALANCED"}}
+        r = self.c.get("/readiness?day=2026-11-16", headers=self.h).json()
+        self.assertEqual((r["score"], r["level"], r["sleepScore"], r["hrvStatus"], r["recoveryHours"]), (31, "LOW", 58, "UNBALANCED", 25))
+        # Sources indisponibles : réponse vide mais valide
+        del self.fake.get_training_readiness, self.fake.get_hrv_data
+        r = self.c.get("/readiness?day=2026-11-16", headers=self.h).json()
+        self.assertIsNone(r["score"])
+
     def test_laps(self):
         self.fake.get_activity_splits = lambda aid: {"lapDTOs": [
             {"distance": 2500.4, "duration": 900.2, "averageHR": 130},

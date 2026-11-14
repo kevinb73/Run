@@ -243,6 +243,7 @@ def _summary(a: dict[str, Any]) -> dict[str, Any]:
         "avgHr": a.get("averageHR"),
         "maxHr": a.get("maxHR"),
         "trainingEffect": a.get("aerobicTrainingEffect"),
+        "trainingLoad": a.get("activityTrainingLoad"),
         "anaerobicEffect": a.get("anaerobicTrainingEffect"),
     }
 
@@ -273,6 +274,47 @@ def laps(activity_id: int) -> dict[str, Any]:
             "avgHr": lap.get("averageHR"),
         })
     return {"laps": out}
+
+
+def _first(*values):
+    for v in values:
+        if v is not None:
+            return v
+    return None
+
+
+@app.get("/readiness", dependencies=[Depends(require_key)])
+def readiness(day: str | None = None) -> dict[str, Any]:
+    """Forme du jour : disponibilité à l'entraînement, VFC et sommeil (chaque source est facultative)."""
+    d = (date.fromisoformat(day) if day else date.today()).isoformat()
+    g = garmin()
+    out: dict[str, Any] = {"date": d, "score": None, "level": None, "hrvStatus": None, "sleepScore": None, "recoveryHours": None}
+
+    def safe(name, *args):
+        try:
+            with _lock:
+                return getattr(g, name)(*args)
+        except Exception:  # donnée absente (montre non portée la nuit, etc.)
+            return None
+
+    tr = safe("get_training_readiness", d)
+    if isinstance(tr, list) and tr:
+        tr = max(tr, key=lambda x: x.get("timestamp") or x.get("timestampLocal") or "")
+    if isinstance(tr, dict):
+        out["score"] = tr.get("score")
+        out["level"] = tr.get("level")
+        out["sleepScore"] = tr.get("sleepScore")
+        rec = tr.get("recoveryTime")
+        out["recoveryHours"] = round(rec / 60) if isinstance(rec, (int, float)) else None
+    hrv = safe("get_hrv_data", d)
+    if isinstance(hrv, dict):
+        out["hrvStatus"] = (hrv.get("hrvSummary") or {}).get("status")
+    if out["sleepScore"] is None:
+        sl = safe("get_sleep_data", d)
+        if isinstance(sl, dict):
+            scores = ((sl.get("dailySleepDTO") or {}).get("sleepScores") or {})
+            out["sleepScore"] = _first((scores.get("overall") or {}).get("value"))
+    return out
 
 
 @app.get("/garmin/profile", dependencies=[Depends(require_key)])

@@ -39,7 +39,7 @@ export function currentWeek(plan, today) {
  * @param newRace Optionnel : { distanceM, timeSec } d'une course ou d'un test récent.
  * @returns { plan, adjustment } ; adjustment décrit les décisions prises (affiché à l'utilisateur).
  */
-export function adaptPlan(plan, log, today, newRace = null, hr = null) {
+export function adaptPlan(plan, log, today, newRace = null, hr = null, load = null) {
   const stats = recentStats(plan, log, today);
   const cur = currentWeek(plan, today) ?? plan.weeks[0];
   let vdot = cur.vdot;
@@ -87,6 +87,14 @@ export function adaptPlan(plan, log, today, newRace = null, hr = null) {
       weeklyKm *= 0.9;
       reasons.push('Fatigue détectée : volume réduit de 10 %.');
     }
+  }
+  // Charge totale (course + futsal + arbitrage) : semaine nettement au-dessus du mois → on réduit avant la blessure.
+  if (load?.zone === 'high') {
+    weeklyKm *= 0.8;
+    reasons.push(`Charge de la semaine trop élevée par rapport à ton mois (ratio ${String(load.ratio).replace('.', ',')}) : volume réduit de 20 % pour éviter la blessure.`);
+  } else if (load?.zone === 'elevated') {
+    weeklyKm *= 0.9;
+    reasons.push(`Charge de la semaine élevée (ratio ${String(load.ratio).replace('.', ',')}, futsal compris) : volume réduit de 10 %.`);
   }
   if (!reasons.length) reasons.push('Rien à signaler : le plan est conservé, seules les prochaines semaines sont recalculées.');
 
