@@ -21,7 +21,7 @@ export const isRunningActivity = (a) => !a.type || /running/i.test(a.type);
 export const sportKindOf = (a) => (SOCCER.test(a.type ?? '') ? 'futsal' : 'other');
 
 function sportEntry(a) {
-  return { done: true, feel: undefined, durationSec: a.durationSec, avgHr: a.avgHr ?? undefined, garminId: a.id, source: 'garmin', at: a.date };
+  return { done: true, feel: undefined, durationSec: a.durationSec, avgHr: a.avgHr ?? undefined, calories: a.calories ?? undefined, garminId: a.id, source: 'garmin', at: a.date };
 }
 
 /** Le sport intense charge l'organisme : la séance dure du lendemain devient footing. */
@@ -84,6 +84,16 @@ export function applyActivities(plan, log, activities, known) {
 
     // Activité autre que la course (futsal, foot, autre sport)
     if (!isRunningActivity(a)) {
+      // Renforcement lancé depuis la montre : coche la séance de renfo du jour.
+      if (/strength|training|fitness_equipment/i.test(a.type ?? '')) {
+        const renfo = all().find((s) => s.type === 'strength' && s.date === a.date && !newLog[s.id]?.done);
+        if (renfo) {
+          newLog[renfo.id] = { ...sportEntry(a), feel: 'ok' };
+          newKnown[a.id] = renfo.id;
+          notices.push(`Renforcement du ${a.date} détecté sur ta montre ✓`);
+          continue;
+        }
+      }
       const kind = sportKindOf(a);
       const planned = sportDay(kind === 'futsal' ? 'futsal' : 'referee') ?? sportDay();
       if (planned) {

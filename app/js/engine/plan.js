@@ -7,6 +7,7 @@
 //  - Allures calculées par le modèle VDOT à partir d'une performance récente.
 
 import { vdotFromPerformance, vdotFromEasyPace, predictTime, racePace, trainingPaces } from './vdot.js';
+import { strengthSession, strengthDays, strengthLevel } from './strength.js';
 import { addDays, mondayOf, weekday, daysBetween } from './dates.js';
 import * as W from './workouts.js';
 
@@ -28,6 +29,13 @@ export const PHASES = {
   taper: { label: 'Affûtage', goal: 'Réduire le volume, garder l\'intensité : arriver frais le jour J.' },
   restart: { label: 'Reprise', goal: 'Alterner marche et course pour habituer le corps en douceur.' },
 };
+
+/**
+ * Version du moteur de plan. À incrémenter quand une nouveauté change le CONTENU des plans
+ * (ex. ajout du renforcement) : les plans existants sont alors recalculés automatiquement pour la suite,
+ * sans perdre l'historique (voir upgrade.js).
+ */
+export const ENGINE_VERSION = 3;
 
 export const SPORTS = {
   futsal: { label: 'Futsal', icon: '⚽', description: 'Séance intense (sprints, changements de direction) : elle compte comme ta séance de fractionné de la semaine.' },
@@ -264,7 +272,7 @@ export function generatePlan(profile, opts) {
     const phaseLen = phases.filter((p) => p === phase).length;
     const p = phaseLen > 1 ? idxInPhase / (phaseLen - 1) : 1;
     const isRaceWeek = i === nWeeks - 1;
-    const recovery = phase !== 'taper' && i % 4 === 3;
+    const recovery = phase !== 'taper' && (weekOffset + i) % 4 === 3; // cycle 3:1 sur tout le plan (même après recalcul)
     const weekStart = addDays(start, i * 7);
 
     // Volume de la semaine
@@ -308,7 +316,7 @@ export function generatePlan(profile, opts) {
       if (sportDays.length) qTypes = regular ? [] : qTypes.slice(0, Math.max(1, qTypes.length - 1));
       // Petite base : la phase Fondation reste en endurance pure (les séances de qualité durent 45–55 min).
       if (lowBase && phase === 'base') qTypes = [];
-      const slots = assignDays(days, profile.longRunDay, qTypes.length, sportDays);
+      let slots = assignDays(days, profile.longRunDay, qTypes.length, sportDays);
       qTypes = qTypes.slice(0, slots.quality.length);
       // Un jour à la fois « course » et « sport possible » : une seule carte « séance OU sport ».
       sessions.push(...sportSessions(sports, weekStart, today, weekOffset + i, days));
@@ -341,26 +349,55 @@ export function generatePlan(profile, opts) {
       // « level » = niveau de difficulté dans la progression du type de séance (0 → 1), ajustable selon la réussite.
       const quality = qTypes.map((t) => ({ ...buildQuality(t, c, pQ), level: pQ }));
       // Semaine de test : le test remplace la séance de qualité (ou, à défaut, un footing placé loin du sport).
-      let testOnEasy = null;
+      let testOnEasy = null, testExtraDay = null;
       if (i === testWeek) {
         if (quality.length) quality[0] = W.vmaTest(c);
         else {
-          const safe = slots.easy.filter((d) => !sportDays.includes(d) && !sportDays.some((sd) => (d - sd + 7) % 7 === 1));
-          testOnEasy = safe[0] ?? slots.easy[0] ?? null;
+          // Test : pas un jour de sport, ni le lendemain d'un sport ou de la sortie longue (jambes fraîches).
+          const fresh = (d) => !sportDays.includes(d) && !sportDays.some((sd) => (d - sd + 7) % 7 === 1) && (d - slots.long + 7) % 7 !== 1;
+          testOnEasy = slots.easy.find(fresh) ?? null;
+          if (testOnEasy == null) {
+            // Aucun jour de course « frais » : le test passe sur un jour libre, et le footing de la veille (ou le 1er) saute.
+            const extra = [1, 3, 4, 0, 2, 5, 6].find((d) => !days.includes(d) && fresh(d));
+            if (extra != null) {
+              testExtraDay = extra;
+              const veille = (extra + 6) % 7;
+              const dropped = slots.easy.includes(veille) ? veille : slots.easy[0];
+              slots = { ...slots, easy: slots.easy.filter((d) => d !== dropped) };
+            } else testOnEasy = slots.easy[0] ?? null;
+          }
         }
       }
       const qualityKm = quality.reduce((s, q) => s + W.estimate(q.steps, c.paces).km, 0);
 
       const nEasy = slots.easy.length;
       const easyKm = nEasy ? clamp((volume - longKm - qualityKm) / nEasy, minEasy, Math.max(minEasy, longKm * 0.75)) : 0;
-      const stridesOn = phase === 'base' || phase === 'build' ? slots.easy[0] : null;
+      // Jour du test (s'il y en a un) et sa veille : veille allégée (pas d'accélérations ni de renforcement).
+      const testDay = testExtraDay ?? testOnEasy ?? (i === testWeek && slots.quality.length ? slots.quality[0] : null);
+      const veilleTest = testDay != null ? (testDay + 6) % 7 : null;
+      let stridesOn = phase === 'base' || phase === 'build' ? slots.easy[0] : null;
+      if (stridesOn != null && (stridesOn === testDay || stridesOn === veilleTest)) stridesOn = slots.easy.find((d) => d !== testDay && d !== veilleTest) ?? null;
 
       push(slots.long, long);
       slots.quality.forEach((d, k) => push(d, quality[k]));
       // Les lignes droites ajoutent ~1 km : on raccourcit d'autant le footing concerné.
       slots.easy.forEach((d) => push(d, d === testOnEasy ? W.vmaTest(c)
         : d === stridesOn ? W.easyRun(c, Math.max(minEasy - 1, easyKm - 1), { strides: true })
-          : W.easyRun(c, easyKm)));
+          : d === veilleTest ? W.easyRun(c, minEasy)
+            : W.easyRun(c, easyKm)));
+      if (testExtraDay != null) push(testExtraDay, W.vmaTest(c));
+
+      // Renforcement (2 × 15 min) : après le 1er footing + un soir libre, jamais la veille d'un sport ou d'une séance dure.
+      if (profile.strength !== false) {
+        const hardDays = [...slots.quality, slots.long].filter((d) => d != null);
+        const level = Math.max(0, strengthLevel(weekOffset + i) - (recovery ? 1 : 0));
+        const noStrength = [testDay, veilleTest].filter((d) => d != null);
+        for (const d of strengthDays({ runDays: days, easyDays: slots.easy.filter((d) => !noStrength.includes(d)), hardDays: [...hardDays, ...noStrength.slice(0, 1)], sportDays }).filter((d) => !noStrength.includes(d))) {
+          const date = addDays(weekStart, d);
+          if (daysBetween(today, date) < 0) continue;
+          sessions.push({ id: `${weekOffset + i}-${d}-renfo`, date, ...strengthSession(level, { afterRun: days.includes(d) }) });
+        }
+      }
     }
 
     sessions.sort((a, b) => a.date.localeCompare(b.date));
@@ -382,6 +419,7 @@ export function generatePlan(profile, opts) {
 
   return {
     version: 1,
+    engine: ENGINE_VERSION,
     mode: fitness ? 'fitness' : 'race',
     createdAt: today,
     profile,
@@ -451,6 +489,7 @@ function generateRestartPlan(profile, opts) {
   const end = addDays(start, (nWeeks - 1) * 7 + slots.at(-1));
   return {
     version: 1,
+    engine: ENGINE_VERSION,
     mode: 'fitness',
     createdAt: today,
     profile: { ...profile, level: 'beginner', raceDate: end, raceDistance: 5000 },

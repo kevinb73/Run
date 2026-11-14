@@ -21,6 +21,7 @@ export function estimate(steps, paces) {
   const walk = (list, mult) => {
     for (const st of list) {
       if (st.kind === 'repeat') { walk(st.steps, mult * st.times); continue; }
+      if (st.kind === 'strength') { s += st.sets * (st.work + st.rest) * mult; continue; }
       const pace = st.zone === 'walk' ? 600 // marche active ≈ 10 min/km
         : st.pace ? (st.pace[0] + st.pace[1]) / 2 : (paces.E[0] + paces.E[1]) / 2 + 30; // trot
       if (st.dur.type === 'distance') { m += st.dur.m * mult; s += (st.dur.m / 1000) * pace * mult; }

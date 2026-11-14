@@ -1,0 +1,151 @@
+import * as store from '../store.js';
+import { SPORTS } from '../engine/plan.js';
+import { currentWeek } from '../engine/adapt.js';
+import { replanDays } from '../engine/replan.js';
+import { vdotFromPerformance, predictTime } from '../engine/vdot.js';
+import { esc, pace, paceRange, duration, dateLong, dateShort, ZONES } from '../format.js';
+import { route } from '../app.js';
+import { pauseSheet } from '../care.js';
+import { DAY_LONG, DAY_SHORT, closeSheet, fmtDays, normalize, onPause, persist, restoreSheet, setState, showSheet, sportsSummary, state, toast, today, view } from '../core.js';
+import { restartOnboarding } from './onboarding.js';
+import { doAdapt } from './today.js';
+import { bindGarminProfile, garminProfileCard, pushWeek, refreshPushed } from '../sync.js';
+
+/** Modifier ses jours (course, sortie longue, sports, renforcement) sans refaire le plan. */
+export function daysSheet() {
+  const pr = state.plan.profile;
+  const sports = pr.otherSports ?? [];
+  const row = (name, checked) => `<div class="days">${DAY_SHORT.map((l, d) => `<label class="day"><input type="checkbox" name="${name}" value="${d}" ${checked(d) ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div>`;
+  const min = state.plan.mode === 'fitness' ? 2 : 3;
+  showSheet(`<h2>Mes jours</h2>
+    <p class="muted">L'historique est conservé ; seules les séances à venir sont recalculées, à partir de ton niveau actuel.</p>
+    <form id="df">
+      <p class="lbl">Jours de course (${min} minimum)</p>${row('run', (d) => pr.days.includes(d))}
+      <label class="field">Sortie longue<select name="long">${DAY_LONG.map((l, d) => `<option value="${d}" ${d === pr.longRunDay ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      ${Object.keys(SPORTS).map((k) => `<p class="lbl">${esc(SPORTS[k].label)} (si tu y vas)</p>${row(`sp-${k}`, (d) => sports.some((x) => x.kind === k && x.day === d))}`).join('')}
+      <label class="check"><input type="checkbox" name="strength" ${pr.strength === false ? '' : 'checked'}> Renforcement chevilles / genoux (2 × 15 min / sem.)</label>
+      <p class="error"></p>
+      <button class="btn primary" type="submit">Recalculer la suite du plan</button>
+      <button class="btn" type="button" data-close>Annuler</button>
+    </form>`, (sheet) => {
+    sheet.querySelector('#df').addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      const f = ev.currentTarget;
+      const vals = (n) => [...f.querySelectorAll(`[name="${n}"]:checked`)].map((i) => Number(i.value));
+      const days = vals('run');
+      const longRunDay = Number(f.long.value);
+      const err = f.querySelector('.error');
+      if (days.length < min) { err.textContent = `Choisis au moins ${min} jours de course.`; return; }
+      if (!days.includes(longRunDay)) { err.textContent = 'Le jour de sortie longue doit être un jour de course.'; return; }
+      const otherSports = Object.keys(SPORTS).flatMap((k) => vals(`sp-${k}`).map((day) => ({ day, kind: k })));
+      try {
+        const { plan, adjustment } = replanDays(state.plan, state.log, today(), { days, longRunDay, otherSports, strength: f.strength.checked });
+        state.plan = plan;
+        persist();
+        closeSheet();
+        refreshPushed().then(() => pushWeek({ silent: true }));
+        toast(adjustment.reasons[0].split(' Historique')[0]);
+        route();
+      } catch (ex) { err.textContent = ex.message; }
+    });
+  });
+}
+
+export function renderProfile() {
+  const p = state.plan;
+  const cur = currentWeek(p, today()) ?? p.weeks[0];
+  const restart = p.profile.fitnessGoal === 'restart';
+  view.innerHTML = `
+    <h1>Profil & allures</h1>
+    ${restart ? `<section class="card"><h2>Reprise</h2><p class="muted">Pas de chrono à ce stade : l'objectif est de courir 30 min sans s'arrêter. Les allures ci-dessous sont indicatives, fie-toi surtout à l'aisance respiratoire.</p></section>` : `<section class="card">
+      <h2>Niveau actuel</h2>
+      <p>VDOT <strong>${cur.vdot}</strong> <span class="muted">(départ ${p.vdotStart}, visé ${p.vdotGoal})</span></p>
+      <p class="muted">Prédiction ${p.mode === 'fitness' ? 'sur 5 km' : ''} aujourd'hui : ${duration(predictTime(cur.vdot, p.profile.raceDistance))} · objectif plan : ${duration(p.predictedGoalSec)}</p>
+    </section>`}
+    <section class="card">
+      <h2>Tes allures cette semaine</h2>
+      <table class="paces">${Object.entries(cur.paces).map(([z, r]) => `<tr><td><span class="swatch" style="background:${ZONES[z].color}"></span>${ZONES[z].label}</td><td>${paceRange(r)}</td></tr>`).join('')}
+        ${p.racePace ? `<tr><td><span class="swatch" style="background:${ZONES.race.color}"></span>${p.mode === 'fitness' ? 'Allure objectif 5 km' : 'Allure course'}</td><td>${pace(p.racePace)}/km</td></tr>` : ''}</table>
+    </section>
+    <section class="card">
+      <h2>Nouveau chrono</h2>
+      <p class="muted">Tu as fait une course ou un test ? Le plan se recalcule à partir de ce résultat.</p>
+      <button class="btn" id="new-race">Ajouter un chrono</button>
+    </section>
+    ${p.adjustments.length ? `<section class="card"><h2>Historique des ajustements</h2><ul class="adj">${p.adjustments.slice().reverse().map((a) => `<li><strong>${esc(dateShort(a.date))}</strong> — ${a.reasons.map(esc).join(' ')}</li>`).join('')}</ul></section>` : ''}
+    <section class="card"><h2>Mes jours</h2>
+      <p class="muted">Course ${esc(fmtDays(p.profile.days))} · sortie longue le ${DAY_LONG[p.profile.longRunDay]}${(p.profile.otherSports ?? []).length ? ` · ${esc(sportsSummary(p.profile.otherSports))}` : ''} · renforcement ${p.profile.strength === false ? 'désactivé' : '2×/sem.'}</p>
+      <button class="btn" id="days-btn">Modifier mes jours</button>
+    </section>
+    <section class="card"><h2>⏸ Pause</h2>
+      <p class="muted">Maladie, blessure, vacances : le plan se suspend puis reprend en douceur au lieu de repartir comme si de rien n'était.</p>
+      ${onPause(today()) ? `<p>En pause jusqu'au <strong>${esc(dateLong(state.pause.until))}</strong>.</p>` : '<button class="btn" id="pause-btn">Faire une pause</button>'}
+    </section>
+    ${garminProfileCard()}
+    <section class="card">
+      <h2>Données</h2>
+      <p class="muted">${state.garmin?.url ? 'Ton plan est sauvegardé automatiquement sur ton serveur (20 dernières versions). L\'export reste possible en complément.' : 'Tout est stocké sur ton téléphone. Exporte une sauvegarde de temps en temps.'}</p>
+      <div class="actions wrap">
+        <button class="btn" id="export">Exporter</button>
+        <label class="btn">Importer<input type="file" accept="application/json" id="import" hidden></label>
+        <button class="btn" id="redo">Refaire le questionnaire</button>
+      </div>
+    </section>
+    <p class="muted center small">Run Coach · v0.32</p>`;
+
+  bindGarminProfile();
+  view.querySelector('#pause-btn')?.addEventListener('click', pauseSheet);
+  view.querySelector('#days-btn')?.addEventListener('click', daysSheet);
+  view.querySelector('#g-restore')?.addEventListener('click', () => {
+    if (confirm('Remplacer le plan de ce téléphone par la dernière sauvegarde du serveur ?')) restoreSheet();
+  });
+  view.querySelector('#new-race').addEventListener('click', () => {
+    showSheet(`<h2>Nouveau chrono</h2><form id="nr">
+      <div class="choices">${[[5000, '5 km'], [10000, '10 km'], [21097, 'Semi'], [42195, 'Marathon']].map(([m, l]) => `<label class="choice small"><input type="radio" name="d" value="${m}"><span>${l}</span></label>`).join('')}</div>
+      ${timeFields()}<p class="error"></p><button class="btn primary" type="submit">Recalculer le plan</button></form>`, (sheet) => {
+      sheet.querySelector('#nr').addEventListener('submit', (ev) => {
+        ev.preventDefault();
+        const d = Number(sheet.querySelector('[name=d]:checked')?.value);
+        const sec = readTimeFields(sheet);
+        if (!d || !sec) { sheet.querySelector('.error').textContent = 'Distance et temps requis.'; return; }
+        const v = vdotFromPerformance(d, sec);
+        if (v < 20 || v > 85) { sheet.querySelector('.error').textContent = 'Chrono incohérent, vérifie la saisie.'; return; }
+        closeSheet();
+        doAdapt({ distanceM: d, timeSec: sec });
+      });
+    });
+  });
+  view.querySelector('#export').addEventListener('click', () => {
+    const blob = new Blob([store.exportJSON(state)], { type: 'application/json' });
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `run-coach-${today()}.json` });
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+  view.querySelector('#import').addEventListener('change', async (ev) => {
+    try {
+      setState(normalize({ ...store.importJSON(await ev.target.files[0].text()), garmin: state.garmin }));
+      persist();
+      toast('Sauvegarde restaurée.');
+      route();
+    } catch (ex) { toast(ex.message); }
+  });
+  view.querySelector('#redo').addEventListener('click', () => {
+    if (!confirm('Générer un nouveau plan ? L\'historique des séances du plan actuel sera effacé.')) return;
+    restartOnboarding(p);
+    location.hash = '#/onboarding';
+  });
+}
+
+
+export function timeFields() {
+  return `<div class="time-input">
+    <label><input type="number" inputmode="numeric" min="0" name="h" placeholder="0"><span>h</span></label>
+    <label><input type="number" inputmode="numeric" min="0" max="59" name="m" placeholder="00"><span>min</span></label>
+    <label><input type="number" inputmode="numeric" min="0" max="59" name="s" placeholder="00"><span>s</span></label></div>`;
+}
+
+export function readTimeFields(root) {
+  const v = (n) => Number(root.querySelector(`[name=${n}]`).value || 0);
+  const t = v('h') * 3600 + v('m') * 60 + v('s');
+  return t > 0 ? t : null;
+}

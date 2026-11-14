@@ -1,6 +1,6 @@
 # Feuille de route — Run Coach
 
-_Dernière mise à jour : 14 novembre 2026 · app : **v0.16** (en attente de validation, PR #16) · serveur : **64abd20**_
+_Dernière mise à jour : 14 novembre 2026 · app : **v0.28** · serveur : **64abd20**_
 
 Principe : **on n'ajoute une fonction que si elle sert la régularité, la progression ou la prévention des blessures.**
 Les priorités sont revues après chaque bloc de 2–3 semaines de course réelle.
@@ -11,9 +11,10 @@ Les priorités sont revues après chaque bloc de 2–3 semaines de course réell
 
 État au 14 novembre 2026, fin de la première session de développement :
 
-- **App** : PWA dans `app/` (vanilla JS, aucune dépendance), publiée par GitHub Pages sur `kevinb73.github.io/Run/`. Version **v0.16** = nouvelle identité visuelle (style Nike Run Club : noir, volt `#d7ff1f`, Anton + Inter, icônes SVG `app/js/icons.js`, séance du jour en premier).
+- **App** : PWA dans `app/` (vanilla JS, aucune dépendance ; `js/app.js` = routeur, `js/core.js` = état et utilitaires, `js/sync.js` = Garmin, `js/care.js` = pause / douleur, `js/pages/*.js` = un fichier par écran), publiée par GitHub Pages sur `kevinb73.github.io/Run/`. Version **v0.16** = nouvelle identité visuelle (style Nike Run Club : noir, volt `#d7ff1f`, Anton + Inter, icônes SVG `app/js/icons.js`, séance du jour en premier).
 - **Serveur** : `server/` (FastAPI + garminconnect) sur Hetzner CPX02 Helsinki, `https://95-217-212-42.sslip.io` ; `/health` affiche la version du code ; mise à jour automatique horaire depuis `main` (ou redémarrage via l'API Hetzner). La clé d'accès du serveur n'est **pas** dans le dépôt : elle est saisie dans l'app (Profil) ; le jeton API Hetzner est un secret de l'environnement Claude « Run ».
-- **Tests** : `npm test` (moteur, dont test de robustesse 600 profils) ; `python -m unittest server/test_server.py`.
+- **Mises à jour du moteur** : si une nouveauté change le contenu des plans, incrémenter `ENGINE_VERSION` (plan.js) et ajouter une ligne dans `ENGINE_NOTES` (upgrade.js) : les plans existants sont recalculés pour la suite, sans perte d'historique.
+- **Tests** : `npm run test:e2e` (parcours iPhone simulés, faux serveur Garmin — lancés aussi automatiquement sur chaque PR par `.github/workflows/tests.yml`) ; `npm test` (moteur, dont test de robustesse 600 profils) ; `python -m unittest server/test_server.py`.
 - **Utilisateur** : coureur irrégulier qui reprend, futsal mercredi + dimanche (jours « course OU futsal »), arbitre (match le samedi), Forerunner 965, iPhone. Allure footing déclarée ~8'30–9'00/km ; sa base réelle (durée de course continue) est à confirmer après la séance du lundi 16 novembre → éventuellement repasser en mode « Reprendre la course » ou baisser l'allure.
 - **Prochaines actions** : valider la v0.16 en main propre et ajuster le design écran par écran ; recalibrer le plan après les premières séances ; avant le 20 décembre : veille du test VMA allégée (3.1).
 
@@ -40,7 +41,7 @@ Livrable : liste des corrections et des seuils à ajuster.
 |---|---|---|---|
 | 1.1 | ~~Atelier esthétique~~ → **fait en v0.16** (style Nike Run Club). Reste : ajustements après prise en main | L'app doit donner envie de l'ouvrir | Petit |
 | 1.2 | Icône d'app et écran de démarrage soignés | Première impression sur l'iPhone | Petit |
-| 1.3 | Retirer de la montre une séance faite en avance | Aujourd'hui elle reste affichée à sa date d'origine | Petit |
+| 1.3 | ~~Retirer de la montre une séance faite en avance~~ → **fait en v0.28** | — | — |
 
 Entrée attendue : tes captures annotées de ce qui te gêne visuellement.
 
@@ -64,10 +65,10 @@ Coût : 0 € (abonnement ChatGPT existant). Points d'attention : confidentialit
 
 | # | Fonction | Pourquoi | Effort |
 |---|---|---|---|
-| 3.1 | **Veille du test VMA allégée automatiquement** | Test du 28 décembre fiable (pas de futsal / sortie longue la veille) | Petit — **avant le 20 déc.** |
-| 3.2 | **Modifier ses jours sans refaire le plan** | Planning futsal / arbitrage variable ; garder l'historique | Moyen |
-| 3.3 | **Renforcement & mobilité** (2 × 15 min / sem.) envoyés sur la montre | Chevilles, genoux, tendons : le risque n° 1 avec le futsal | Moyen |
-| 3.4 | Indisponibilités ponctuelles (« pas dispo jeudi ») | Redistribuer la semaine | Petit |
+| 3.1 | ~~Veille du test VMA allégée~~ → **fait en v0.28** (test un jour « frais », veille sans accélérations ni renfo) | Test fiable | — |
+| 3.2 | ~~Modifier ses jours sans refaire le plan~~ → **fait en v0.26** (Profil → Mes jours) | Planning futsal / arbitrage variable ; garder l'historique | — |
+| 3.3 | ~~Renforcement~~ → **fait en v0.26** (2 × 15 min / sem., 3 niveaux, envoyé sur la montre) | Chevilles, genoux, tendons : le risque n° 1 avec le futsal | — |
+| 3.4 | ~~Indisponibilités ponctuelles~~ → **fait en v0.30** (fiche séance → « Pas dispo ce jour-là ») | — | — |
 
 ### 3.5 — Préparation au Yo-Yo test d'arbitre (priorité de la phase 3)
 
@@ -136,6 +137,13 @@ Niche la plus prometteuse : **préparation physique des arbitres** (tests obliga
 | v0.22 | Footing dur ou cœur trop haut → footing suivant (≤ 3 j) allégé de 20 %, sans accélérations |
 | v0.23–v0.24 | Plus de 2e course proposée le même jour ; futsal / arbitrage notés sans montre : durée + ressenti comptés dans la charge (méthode RPE) |
 | v0.25 | Écran Aujourd'hui centré sur le jour : « Séance faite ✓ » (résumé + récap) ou « Repos », prochaine séance en carte compacte |
+| v0.26 | Renforcement chevilles / genoux / hanches (2 × 15 min, 3 niveaux, sur la montre) ; « Mes jours » : changer jours de course / sports sans refaire le plan |
+| v0.27 | Plans « à l'épreuve des mises à jour » : version du moteur, recalcul automatique de la suite à chaque nouveauté, historique et bonus conservés |
+| v0.28 | Test VMA placé un jour où les jambes sont fraîches (veille légère) ; séance faite en avance retirée de la montre ; mot du coach mis en avant ; passe anti-bug (semaine allégée lors d'un recalcul, envoi renfo non bloquant, test de robustesse étendu) |
+| v0.29 | Code découpé en modules (routeur, état, Garmin, un fichier par écran) ; parcours iPhone simulés dans le dépôt, lancés sur chaque PR |
+| v0.30 | « Pas dispo ce jour-là » : meilleurs jours de remplacement dans la semaine (règles de sécurité), ou sauter la séance |
+| v0.31 | Bilan mensuel (Progrès) : km, temps, calories, séances par activité (course, futsal, arbitrage, renfo), comparaison au mois précédent, mot du coach ; fenêtre automatique en début de mois |
+| v0.32 | Records personnels (plus longue sortie / durée, meilleure allure, 5 km estimé), caps (20/30/45/60 min, 5/10 km, cumuls), série de semaines régulières ; célébration sur Aujourd'hui ; test statique des liens entre modules |
 
 ## Coûts récurrents
 

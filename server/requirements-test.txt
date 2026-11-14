@@ -1,0 +1,3 @@
+# Dépendances des tests uniquement (non installées sur le serveur)
+-r requirements.txt
+httpx2==2.13.1

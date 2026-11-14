@@ -54,7 +54,7 @@ test('plan : toutes distances et niveaux génèrent sans erreur', () => {
   for (const d of [5000, 10000, 21097, 42195]) for (const level of ['beginner', 'intermediate', 'advanced']) {
     const plan = generatePlan({ ...base, raceDistance: d, level, recent: null, raceDate: '2027-06-13' }, { today: TODAY });
     assert.ok(plan.weeks.length > 20);
-    for (const w of plan.weeks) for (const s of w.sessions) assert.ok(s.km > 0 && Number.isFinite(s.km));
+    for (const w of plan.weeks) for (const s of w.sessions.filter((x) => x.type !== 'strength')) assert.ok(s.km > 0 && Number.isFinite(s.km));
   }
 });
 
@@ -89,7 +89,7 @@ test('remise en forme : 3 objectifs × durées, fin par un bilan', () => {
 test('courir régulièrement : 1 seule séance de qualité par semaine', () => {
   const plan = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, days: [0, 2, 4, 6] }, { today: TODAY });
   for (const w of plan.weeks.slice(0, -1)) {
-    assert.ok(w.sessions.filter((s) => !['easy', 'long'].includes(s.type)).length <= 1);
+    assert.ok(w.sessions.filter((s) => !['easy', 'long', 'strength'].includes(s.type)).length <= 1);
   }
 });
 
@@ -102,7 +102,7 @@ test('remise en forme : réajustement possible', () => {
 test('futsal : jamais de séance dure le lendemain, affiché en facultatif', () => {
   const otherSports = [{ day: 2, kind: 'futsal' }, { day: 6, kind: 'futsal' }];
   const plan = generatePlan({ ...base, days: [0, 1, 3, 5], longRunDay: 5, otherSports }, { today: TODAY });
-  const easyTypes = ['easy', 'long', 'sport', 'race'];
+  const easyTypes = ['easy', 'long', 'sport', 'race', 'strength'];
   for (const s of plan.weeks.flatMap((w) => w.sessions)) {
     const wd = (new Date(s.date).getUTCDay() + 6) % 7;
     if ([3, 0].includes(wd)) assert.ok(easyTypes.includes(s.type), `${s.date} ${s.title} après futsal`);
@@ -509,4 +509,192 @@ test('futsal noté sans montre : la durée et le ressenti comptent dans la charg
   assert.equal(activityLoad(acts[0], null), Math.round(60 * 8 * 0.45));
   // Importé de Garmin : pas de double comptage
   assert.equal(manualActivities(plan, { [futsal.id]: { done: true, feel: 'hard', sportMin: 60, source: 'garmin' } }).length, 0);
+});
+
+test('renforcement : 2 séances/sem., après le 1er footing + un soir libre, jamais la veille d\'un sport', () => {
+  const otherSports = [{ day: 2, kind: 'futsal' }, { day: 6, kind: 'futsal' }, { day: 5, kind: 'referee' }];
+  const plan = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, weeklyKm: 5, longestRunKm: 3, days: [0, 2, 6], longRunDay: 6, otherSports }, { today: TODAY });
+  const wd = (d) => (new Date(d).getUTCDay() + 6) % 7;
+  for (const w of plan.weeks.slice(0, -1).filter((x) => !x.sessions.some((s) => s.type === 'test'))) {
+    const st = w.sessions.filter((s) => s.type === 'strength');
+    assert.equal(st.length, 2, `semaine ${w.index}`);
+    assert.deepEqual(st.map((s) => wd(s.date)), [0, 3], 'lundi après le footing + jeudi');
+    for (const s of st) { assert.ok(s.optional); assert.ok(s.min >= 12 && s.min <= 20, `${s.min} min`); }
+  }
+  assert.equal(plan.weeks[0].sessions.find((s) => s.type === 'strength').level, 0);
+  assert.equal(plan.weeks[9].sessions.find((s) => s.type === 'strength').level, 2);
+  // Désactivable
+  const off = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, strength: false }, { today: TODAY });
+  assert.ok(!off.weeks.some((w) => w.sessions.some((s) => s.type === 'strength')));
+});
+
+test('changer ses jours : passé et séances faites conservés, avenir recalculé, fin inchangée', async () => {
+  const { replanDays } = await import('../app/js/engine/replan.js');
+  const prof = { ...fit, fitnessGoal: 'regular', durationWeeks: 12, weeklyKm: 5, longestRunKm: 3, days: [0, 2, 6], longRunDay: 6,
+    otherSports: [{ day: 2, kind: 'futsal' }, { day: 6, kind: 'futsal' }] };
+  const plan = generatePlan(prof, { today: TODAY });
+  const today = '2026-12-02'; // mercredi, semaine 3
+  const log = {};
+  for (const s of plan.weeks.flatMap((w) => w.sessions)) if (s.date < today && !s.optional) log[s.id] = { done: true, feel: 'ok' };
+  const { plan: p2 } = replanDays(plan, log, today, { days: [1, 3, 5], longRunDay: 5, otherSports: [{ day: 2, kind: 'futsal' }] });
+  const all1 = plan.weeks.flatMap((w) => w.sessions), all2 = p2.weeks.flatMap((w) => w.sessions);
+  for (const s of all1.filter((x) => x.date < today)) assert.ok(all2.some((y) => y.id === s.id && y.date === s.date), `passé conservé ${s.id}`);
+  const wd = (d) => (new Date(d).getUTCDay() + 6) % 7;
+  for (const s of all2.filter((x) => x.date >= today && !x.optional && x.type !== 'strength')) assert.ok([1, 3, 5].includes(wd(s.date)), `${s.date} ${s.title}`);
+  assert.equal(p2.weeks.length, plan.weeks.length);
+  assert.equal(new Set(all2.map((s) => s.id)).size, all2.length, 'ids uniques');
+  const lastRun = (p) => p.weeks.at(-1).sessions.filter((s) => !s.optional).at(-1);
+  assert.equal(wd(lastRun(p2).date), 5, 'test final le nouveau jour de sortie longue');
+  // Pas de recul brutal : volume de la semaine suivante proche de l'ancien
+  const nextOld = plan.weeks.find((w) => w.start > today), nextNew = p2.weeks.find((w) => w.start > today);
+  assert.ok(Math.abs(nextNew.volumeKm - nextOld.volumeKm) <= nextOld.volumeKm * 0.35, `${nextOld.volumeKm} → ${nextNew.volumeKm}`);
+  // Renforcement : niveau qui suit l'avancement (pas de retour au niveau 1)
+  const lateStr = p2.weeks[9].sessions.find((s) => s.type === 'strength');
+  assert.equal(lateStr.level, 2);
+});
+
+test('mise à niveau du moteur : ancien plan enrichi (renfo), historique et bonus conservés, une seule fois', async () => {
+  const { upgradePlan } = await import('../app/js/engine/upgrade.js');
+  const { ENGINE_VERSION } = await import('../app/js/engine/plan.js');
+  const prof = { ...fit, fitnessGoal: 'regular', durationWeeks: 12, weeklyKm: 5, longestRunKm: 3, days: [0, 2, 6], longRunDay: 6, strength: undefined };
+  // Ancien plan (v1) : sans renfo ni champ engine
+  const fresh = generatePlan(prof, { today: TODAY });
+  const old = { ...fresh, engine: undefined, weeks: fresh.weeks.map((w) => ({ ...w, sessions: w.sessions.filter((s) => s.type !== 'strength') })) };
+  const today = '2026-11-25';
+  const log = {};
+  for (const s of old.weeks.flatMap((w) => w.sessions)) if (s.date < today) log[s.id] = { done: true, feel: 'ok' };
+  const withBonus = addBonus(old, today).plan;
+  const r = upgradePlan(withBonus, log, today);
+  assert.ok(r && r.notes.length);
+  assert.equal(r.plan.engine, ENGINE_VERSION);
+  const all = r.plan.weeks.flatMap((w) => w.sessions);
+  for (const id of Object.keys(log)) assert.ok(all.some((s) => s.id === id), `historique ${id}`);
+  assert.ok(all.some((s) => s.bonus && s.date === today), 'bonus conservé');
+  assert.ok(all.some((s) => s.type === 'strength' && s.date > today), 'renfo ajouté pour la suite');
+  assert.ok(!all.some((s) => s.type === 'strength' && s.date < today), 'passé inchangé');
+  assert.equal(upgradePlan(r.plan, log, today), null, 'pas deux fois');
+  assert.equal(upgradePlan(withBonus, log, today, { paused: true }), null, 'pas pendant une pause');
+});
+
+test('plan pas encore commencé : un bonus fait avant le début reste dans l\'historique après recalcul', async () => {
+  const { upgradePlan } = await import('../app/js/engine/upgrade.js');
+  const prof = { ...fit, fitnessGoal: 'regular', durationWeeks: 12, weeklyKm: 5, longestRunKm: 3, days: [0, 2, 6], longRunDay: 6 };
+  const fresh = generatePlan(prof, { today: TODAY }); // samedi : plan démarre lundi
+  const old = { ...fresh, engine: undefined, weeks: fresh.weeks.map((w) => ({ ...w, sessions: w.sessions.filter((s) => s.type !== 'strength') })) };
+  const { plan, id } = addBonus(old, TODAY);
+  const log = { [id]: { done: true, feel: 'ok', actualKm: 2.6 } };
+  const r = upgradePlan(plan, log, TODAY);
+  const all = r.plan.weeks.flatMap((w) => w.sessions);
+  assert.ok(all.some((s) => s.id === id && s.date === TODAY), 'bonus du samedi conservé');
+  assert.equal(new Set(all.map((s) => s.id)).size, all.length);
+  assert.ok(all.some((s) => s.type === 'strength'));
+});
+
+test('test VMA : jamais le lendemain du futsal / de la sortie longue ; veille allégée, sans renfo', () => {
+  const otherSports = [{ day: 2, kind: 'futsal' }, { day: 6, kind: 'futsal' }, { day: 5, kind: 'referee' }];
+  const plan = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, weeklyKm: 5, longestRunKm: 3, days: [0, 2, 6], longRunDay: 6, otherSports }, { today: TODAY });
+  const wd = (d) => (new Date(d).getUTCDay() + 6) % 7;
+  const all = plan.weeks.flatMap((w) => w.sessions);
+  const test = all.find((s) => s.type === 'test' && s.title.includes('6 min'));
+  assert.ok(test, 'un test VMA dans le plan');
+  const d = wd(test.date);
+  assert.ok(![2, 6, 5].includes(d), `pas un jour de sport (${d})`);
+  assert.ok(![3, 0, 6].includes(d), `pas le lendemain d'un sport ni de la sortie longue (${d})`);
+  const veille = addDaysT(test.date, -1), lendemain = test.date;
+  for (const s of all.filter((x) => x.date === veille || x.date === lendemain)) {
+    assert.notEqual(s.type, 'strength', `pas de renfo ${s.date}`);
+    assert.ok(!s.steps?.some((st) => st.kind === 'repeat') || s.type === 'test', `pas d'accélérations la veille ${s.title}`);
+  }
+  const w = plan.weeks.find((x) => x.sessions.includes(test));
+  assert.equal(w.sessions.filter((s) => !s.optional).length, 3, 'toujours 3 séances cette semaine');
+});
+function addDaysT(iso, n) { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+
+test('pas dispo : jours de remplacement sûrs dans la semaine, jamais sur une autre course', async () => {
+  const { unavailableOptions } = await import('../app/js/engine/reschedule.js');
+  const otherSports = [{ day: 2, kind: 'futsal' }, { day: 6, kind: 'futsal' }, { day: 5, kind: 'referee' }];
+  const plan = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, weeklyKm: 5, longestRunKm: 3, days: [0, 2, 6], longRunDay: 6, otherSports }, { today: TODAY });
+  const w = plan.weeks[1];
+  const runs = w.sessions.filter((s) => !s.optional && s.type !== 'strength');
+  const runDates = new Set(runs.map((s) => s.date));
+  const wd = (d) => (new Date(d).getUTCDay() + 6) % 7;
+  for (const s of runs) {
+    const opts = unavailableOptions(plan, {}, s.id, w.start);
+    assert.ok(opts.length >= 1, `au moins une option pour ${s.title}`);
+    for (const o of opts) {
+      assert.ok(!runDates.has(o.date), 'pas sur une autre course');
+      assert.ok(o.date >= w.start && o.date <= addDaysT(w.start, 6), 'même semaine');
+      if (s.type === 'long') assert.ok(![2, 6, 5, 3, 0].includes(wd(o.date)), `sortie longue : ni sport ni lendemain (${o.label})`);
+    }
+  }
+  // Rien avant aujourd'hui
+  const mid = addDaysT(w.start, 3);
+  for (const o of unavailableOptions(plan, {}, runs.at(-1).id, mid)) assert.ok(o.date >= mid);
+});
+
+test('bilan mensuel : course, futsal, arbitrage, renfo, calories, sans double comptage', async () => {
+  const { monthlySummary, availableMonths, monthLabel } = await import('../app/js/engine/monthly.js');
+  const otherSports = [{ day: 2, kind: 'futsal' }, { day: 5, kind: 'referee' }];
+  const plan = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, weeklyKm: 5, longestRunKm: 3, days: [0, 3, 6], longRunDay: 6, otherSports }, { today: TODAY });
+  const all = plan.weeks.flatMap((w) => w.sessions);
+  const run = all.find((s) => s.type === 'easy' && s.date.startsWith('2026-11'));
+  const ref = all.find((s) => s.sport === 'referee' && s.date.startsWith('2026-11'));
+  const fut = all.find((s) => s.sport === 'futsal' && s.date.startsWith('2026-11'));
+  const str = all.find((s) => s.type === 'strength' && s.date.startsWith('2026-11'));
+  const acts = {
+    1: { id: 1, date: run.date, type: 'running', distanceKm: 2.6, durationSec: 1320, avgHr: 150, paceSecPerKm: 508, calories: 250 },
+    2: { id: 2, date: ref.date, type: 'running', distanceKm: 9, durationSec: 5400, calories: 700 },
+    3: { id: 3, date: '2026-10-20', type: 'running', distanceKm: 2.5, durationSec: 1280, calories: 240 },
+  };
+  const known = { 1: run.id, 2: ref.id };
+  const log = {
+    [run.id]: { done: true, garminId: 1, source: 'garmin', actualKm: 2.6, calories: 250 },
+    [ref.id]: { done: true, garminId: 2, source: 'garmin' },
+    [fut.id]: { done: true, feel: 'hard', sportMin: 60 },
+    [str.id]: { done: true, feel: 'ok' },
+  };
+  const { cur, prev, delta, lines } = monthlySummary({ plan, log, acts, known }, '2026-11', '2026-11-30');
+  assert.equal(cur.run.n, 1); assert.equal(cur.run.km, 2.6); assert.equal(cur.run.kcal, 250);
+  assert.equal(cur.referee.n, 1); assert.equal(cur.referee.kcal, 700);
+  assert.equal(cur.futsal.n, 1); assert.equal(cur.futsal.min, 60); assert.ok(cur.futsal.kcalEstimated);
+  assert.equal(cur.strength.n, 1);
+  assert.equal(cur.total.sessions, 4);
+  assert.equal(cur.total.kcal, 250 + 700 + 600 + Math.round(str.min * 5));
+  assert.equal(prev.run.n, 1, 'octobre : la course pré-plan compte dans le bilan');
+  assert.equal(delta.km, 4);
+  assert.ok(lines.length >= 2);
+  assert.deepEqual(availableMonths({ plan, acts }, '2026-12-05'), ['2026-10', '2026-11', '2026-12']);
+  assert.equal(monthLabel('2026-11'), 'novembre 2026');
+});
+
+test('records, jalons, série : calcul et nouveautés à célébrer', async () => {
+  const { computeRecords, newAchievements, streak } = await import('../app/js/engine/records.js');
+  const plan = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, weeklyKm: 5, longestRunKm: 3, days: [0, 3, 6], longRunDay: 6 }, { today: TODAY });
+  const acts = {
+    1: { id: 1, date: '2026-11-14', type: 'running', distanceKm: 2.6, durationSec: 1290, paceSecPerKm: 496 },
+    2: { id: 2, date: '2026-11-16', type: 'running', distanceKm: 2.3, durationSec: 1260 },
+    3: { id: 3, date: '2026-11-22', type: 'running', distanceKm: 3.4, durationSec: 1830, paceSecPerKm: 538 },
+    4: { id: 4, date: '2026-11-21', type: 'running', distanceKm: 9, durationSec: 5400 }, // arbitrage
+    5: { id: 5, date: '2026-11-18', type: 'indoor_soccer', durationSec: 3600 },
+  };
+  const ref = plan.weeks[0].sessions.find((s) => s.sport === 'referee') ?? { id: 'x' };
+  const st = { plan, log: {}, acts, known: { 4: ref.id } };
+  if (ref.id === 'x') delete acts[4];
+  const r = computeRecords(st, '2026-11-23');
+  assert.equal(r.records.longestKm.value, 3.4);
+  assert.equal(r.records.longestKm.prev, 2.6);
+  assert.equal(r.records.bestPace.value, 496);
+  assert.ok(!r.records.best5k, 'pas de 5 km estimé sans sortie de 5 km');
+  assert.equal(r.milestones.find((m) => m.key === 'run20').date, '2026-11-14');
+  assert.equal(r.milestones.find((m) => m.key === 'run30').date, '2026-11-22');
+  const news = newAchievements(st, '2026-11-22', {}, '2026-11-23');
+  assert.ok(news.some((n) => n.id === 'longestKm:2026-11-22'));
+  assert.ok(news.some((n) => n.id === 'run30:2026-11-22'));
+  assert.ok(!news.some((n) => n.key === 'bestPace'), 'pas de record d\'allure ce jour-là');
+  assert.equal(newAchievements(st, '2026-11-22', Object.fromEntries(news.map((n) => [n.id, true])), '2026-11-23').length, 0, 'vu = plus annoncé');
+  // Série : 2 semaines complètes puis une ratée
+  const log = {};
+  for (const w of plan.weeks.slice(0, 2)) for (const s of w.sessions) if (!s.optional && s.type !== 'strength') log[s.id] = { done: true };
+  assert.deepEqual(streak({ plan, log }, addDaysT(plan.weeks[2].start, 2)), { current: 2, best: 2 });
+  assert.deepEqual(streak({ plan, log }, addDaysT(plan.weeks[3].start, 2)), { current: 0, best: 2 });
 });
