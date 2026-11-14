@@ -113,5 +113,11 @@ test('futsal : jamais de séance dure le lendemain, affiché en facultatif', () 
 test('remise en forme : 2 jours de course possibles avec futsal', () => {
   const plan = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, days: [0, 4], longRunDay: 4, otherSports: [{ day: 2, kind: 'futsal' }] }, { today: TODAY });
   assert.equal(plan.weeks[1].sessions.filter((s) => !s.optional).length, 2);
+  // Jour « course OU futsal » : sortie longue le dimanche malgré un futsal possible.
+  const both = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, days: [1, 6], longRunDay: 6, otherSports: [{ day: 2, kind: 'futsal' }, { day: 6, kind: 'futsal' }] }, { today: TODAY });
+  const sun = both.weeks[1].sessions.filter((s) => s.date === '2026-11-29');
+  assert.equal(sun.length, 1, 'une seule carte le dimanche');
+  assert.equal(sun[0].type, 'long');
+  assert.equal(sun[0].alt, 'futsal');
   assert.throws(() => generatePlan({ ...base, days: [0, 4] }, { today: TODAY }), /3 jours/);
 });

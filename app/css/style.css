@@ -144,7 +144,11 @@ a { color: inherit; }
   font-size: 0.85rem; font-weight: 600; cursor: pointer;
 }
 
-.day.busy span { opacity: 0.45; cursor: not-allowed; border-style: dashed; }
+.day span { position: relative; }
+.day.busy span { border-style: dashed; }
+.day span i { position: absolute; top: -8px; right: -6px; font-style: normal; font-size: 0.85rem; }
+.alt-note { border-color: var(--z-t); }
+.alt-btn { width: 100%; margin-top: 12px; }
 .type-sport { --tc: var(--z-t); }
 .badge.optional { background: transparent; border: 1px dashed var(--border); }
 
