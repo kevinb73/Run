@@ -10,6 +10,7 @@ from pathlib import Path
 
 os.environ["RUNCOACH_DATA"] = tempfile.mkdtemp()
 os.environ["RUNCOACH_API_KEY"] = "test-key"
+os.environ["RUNCOACH_NO_SCHEDULER"] = "1"  # pas de thread de planification pendant les tests
 sys.path.insert(0, str(Path(__file__).parent))
 
 from fastapi.testclient import TestClient  # noqa: E402
@@ -328,3 +329,116 @@ class ProposalTest(McpTest):
         for _ in range(5):
             self.assertFalse(self.call("proposer_modification", {"action": "sauter", "date": d, "raison": "r"})["isError"])
         self.assertTrue(self.call("proposer_modification", {"action": "sauter", "date": d, "raison": "r"})["isError"], "pas de déluge de propositions")
+
+
+class PushLogicTest(unittest.TestCase):
+    """Logique « quelle notification est due » (pure, sans réseau ni pywebpush)."""
+
+    def setUp(self):
+        import push
+        self.push = push
+        js = """
+        import { generatePlan } from './app/js/engine/plan.js';
+        const plan = generatePlan({ mode: 'fitness', fitnessGoal: 'regular', durationWeeks: 12, level: 'intermediate', weeklyKm: 5, longestRunKm: 3,
+          days: [0, 2, 6], longRunDay: 6, otherSports: [{ day: 2, kind: 'futsal' }, { day: 5, kind: 'referee' }] }, { today: '2026-11-14' });
+        console.log(JSON.stringify({ plan, log: {} }));
+        """
+        self.state = json.loads(subprocess.run(["node", "--input-type=module", "-e", js], cwd=ROOT, capture_output=True, text=True, check=True).stdout)
+        self.prefs = {**push.default_prefs(), "subscription": {"endpoint": "https://x"}, "tz": "Europe/Paris"}
+
+    def at(self, iso):  # datetime UTC
+        from datetime import datetime, timezone
+        return datetime.fromisoformat(iso).replace(tzinfo=timezone.utc)
+
+    def test_day_and_eve(self):
+        # Lundi 16 est une séance (course + renfo). Dimanche 15 au soir 20h (19h UTC) → « demain ».
+        due, last = self.push.notifications_due(self.prefs, self.state, self.at("2026-11-15T19:00:00"))
+        self.assertEqual([n["kind"] for n in due], ["eve"])
+        self.assertIn("Demain", due[0]["title"])
+        self.assertIn("km", due[0]["body"])
+        self.assertEqual(last["eve"], "2026-11-15")
+        # Lundi 16 à 7h (6h UTC) → « aujourd'hui »
+        due, _ = self.push.notifications_due(self.prefs, self.state, self.at("2026-11-16T06:00:00"))
+        self.assertEqual([n["kind"] for n in due], ["day"])
+        self.assertIn("Aujourd'hui", due[0]["title"])
+
+    def test_once_per_day(self):
+        p = {**self.prefs, "last_sent": {"eve": "2026-11-15"}}
+        due, _ = self.push.notifications_due(p, self.state, self.at("2026-11-15T19:30:00"))
+        self.assertEqual(due, [], "pas deux fois le même soir")
+
+    def test_window_closes(self):
+        due, _ = self.push.notifications_due(self.prefs, self.state, self.at("2026-11-15T22:30:00"))
+        self.assertEqual(due, [], "plus de 2 h après l'heure prévue : on laisse tomber")
+
+    def test_before_time(self):
+        due, _ = self.push.notifications_due(self.prefs, self.state, self.at("2026-11-15T18:00:00"))
+        self.assertEqual(due, [])
+
+    def test_rest_day_silent(self):
+        # Mardi 17 : repos (futsal facultatif seul) → pas de notif « aujourd'hui »
+        due, _ = self.push.notifications_due(self.prefs, self.state, self.at("2026-11-17T06:00:00"))
+        self.assertEqual([n for n in due if n["kind"] == "day"], [])
+
+    def test_disabled(self):
+        p = {**self.prefs, "eve": {"enabled": False, "time": "20:00"}, "day": {"enabled": False, "time": "07:00"}}
+        self.assertEqual(self.push.notifications_due(p, self.state, self.at("2026-11-16T06:00:00"))[0], [])
+
+    def test_done_session_no_dayof(self):
+        run = next(s for w in self.state["plan"]["weeks"] for s in w["sessions"] if s["date"] == "2026-11-16" and s["type"] != "strength")
+        st = {**self.state, "log": {run["id"]: {"done": True}}}
+        # Renfo pas fait → il reste une notif, mais plus le footing en titre
+        due, _ = self.push.notifications_due(self.prefs, st, self.at("2026-11-16T06:00:00"))
+        self.assertTrue(all("Footing" not in n["title"] for n in due) or not due)
+
+
+class PushApiTest(unittest.TestCase):
+    """Endpoints push + _push_tick, avec envoi simulé (pas de vrai web push)."""
+
+    def setUp(self):
+        srv._garmin = FakeGarmin()
+        srv.VAPID_FILE.parent.mkdir(parents=True, exist_ok=True)
+        srv.VAPID_FILE.write_text(json.dumps({"private": "priv", "public": "BPUBLICKEY"}))
+        srv.PUSH_PREFS.unlink(missing_ok=True)
+        self.c = TestClient(srv.app)
+        self.h = {"X-Api-Key": "test-key"}
+        self.sent = []
+        self._orig = srv._send_push
+        srv._send_push = lambda sub, notif: (self.sent.append(notif) or True)
+        js = """
+        import { generatePlan } from './app/js/engine/plan.js';
+        const plan = generatePlan({ mode: 'fitness', fitnessGoal: 'regular', durationWeeks: 12, level: 'intermediate', weeklyKm: 5, longestRunKm: 3,
+          days: [0, 2, 6], longRunDay: 6, otherSports: [] }, { today: '2026-11-14' });
+        console.log(JSON.stringify({ plan, log: {} }));
+        """
+        out = subprocess.run(["node", "--input-type=module", "-e", js], cwd=ROOT, capture_output=True, text=True, check=True).stdout
+        self.assertEqual(self.c.put("/backup", headers=self.h, content=out).status_code, 200)
+
+    def tearDown(self):
+        srv._send_push = self._orig
+
+    def test_key_and_prefs(self):
+        self.assertEqual(self.c.get("/push/key").status_code, 401)
+        self.assertEqual(self.c.get("/push/key", headers=self.h).json()["key"], "BPUBLICKEY")
+        self.assertFalse(self.c.get("/push/prefs", headers=self.h).json()["subscribed"])
+        r = self.c.put("/push/prefs", headers=self.h, json={"subscription": {"endpoint": "https://p"}, "tz": "Europe/Paris",
+                                                            "eve": {"enabled": True, "time": "20:00"}, "day": {"enabled": True, "time": "25:99"}})
+        self.assertEqual(r.status_code, 200)
+        got = self.c.get("/push/prefs", headers=self.h).json()
+        self.assertTrue(got["subscribed"])
+        self.assertEqual(got["day"]["time"], "07:00", "heure invalide corrigée au défaut")
+
+    def test_tick_sends_once(self):
+        self.c.put("/push/prefs", headers=self.h, json={"subscription": {"endpoint": "https://p"}, "tz": "Europe/Paris",
+                                                        "eve": {"enabled": True, "time": "20:00"}, "day": {"enabled": True, "time": "07:00"}})
+        from datetime import datetime, timezone
+        n = srv._push_tick(datetime(2026, 11, 15, 19, 0, tzinfo=timezone.utc))  # dim 20h Paris
+        self.assertEqual(n, 1)
+        self.assertIn("Demain", self.sent[0]["title"])
+        # Rejoué à 20h05 : plus rien
+        self.assertEqual(srv._push_tick(datetime(2026, 11, 15, 19, 5, tzinfo=timezone.utc)), 0)
+
+    def test_unsubscribe(self):
+        self.c.put("/push/prefs", headers=self.h, json={"subscription": {"endpoint": "https://p"}})
+        self.assertEqual(self.c.delete("/push/prefs", headers=self.h).json()["ok"], True)
+        self.assertFalse(self.c.get("/push/prefs", headers=self.h).json()["subscribed"])

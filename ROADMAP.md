@@ -91,7 +91,7 @@ Piste commerciale associée : niche « préparation physique des arbitres » (vo
 
 | # | Fonction | Commentaire | Effort |
 |---|---|---|---|
-| 4.1 | Rappel la veille (notification iPhone) | « Demain : footing 35 min » | Moyen |
+| 4.1 | ~~Rappel la veille~~ → **fait en v0.39** : 2 rappels web push (veille au soir + jour même), heures réglables, rien les jours de repos (Profil → Rappels de séance) | — | — |
 | 4.2 | Prédiction 10 km dans Progrès | Quand la sortie longue dépasse 10–12 km | Petit |
 | 4.3 | Suivi des chaussures (km par paire) | Changer avant usure | Petit |
 | 4.4 | Ajustement chaleur (> 25 °C) | Utile à partir du printemps | Petit |
@@ -151,6 +151,7 @@ Niche la plus prometteuse : **préparation physique des arbitres** (tests obliga
 | v0.36 | Propositions de ChatGPT à valider dans l'app (outil MCP proposer_modification ; carte « ChatGPT propose » sur Aujourd'hui) ; séance sautée retirée de la montre |
 | v0.37 | Correctif d'affichage : la date du jour n'est plus mordue par l'accent du grand titre (« SÉANCE FAITE ») |
 | v0.38 | Date du jour (Aujourd'hui) plus grande et en casse normale, lisible à côté du grand titre |
+| v0.39 | Rappels de séance (web push) : « la veille au soir » et « le jour même », heures réglables, activables séparément ; planificateur serveur, clés VAPID auto-générées |
 
 ## Coûts récurrents
 

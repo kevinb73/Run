@@ -11,6 +11,7 @@ import { restartOnboarding } from './onboarding.js';
 import { doAdapt } from './today.js';
 import { bindGarminProfile, garminProfileCard, pushWeek, refreshPushed } from '../sync.js';
 import { api } from '../garmin.js';
+import { pushSupported, loadPushPrefs, enablePush, updatePushPrefs, disablePush } from '../push.js';
 
 /** Modifier ses jours (course, sortie longue, sports, renforcement) sans refaire le plan. */
 export function daysSheet() {
@@ -83,6 +84,7 @@ export function renderProfile() {
       ${onPause(today()) ? `<p>En pause jusqu'au <strong>${esc(dateLong(state.pause.until))}</strong>.</p>` : '<button class="btn" id="pause-btn">Faire une pause</button>'}
     </section>
     ${garminProfileCard()}
+    ${state.garmin?.connected ? remindersCard() : ''}
     ${state.garmin?.connected ? chatgptCard() : ''}
     <section class="card">
       <h2>Données</h2>
@@ -93,12 +95,13 @@ export function renderProfile() {
         <button class="btn" id="redo">Refaire le questionnaire</button>
       </div>
     </section>
-    <p class="muted center small">Run Coach · v0.38</p>`;
+    <p class="muted center small">Run Coach · v0.39</p>`;
 
   bindGarminProfile();
   view.querySelector('#pause-btn')?.addEventListener('click', pauseSheet);
   view.querySelector('#days-btn')?.addEventListener('click', daysSheet);
   bindChatgpt();
+  bindReminders();
   view.querySelector('#g-restore')?.addEventListener('click', () => {
     if (confirm('Remplacer le plan de ce téléphone par la dernière sauvegarde du serveur ?')) restoreSheet();
   });
@@ -185,5 +188,69 @@ function bindChatgpt() {
       out.hidden = false;
       ev.currentTarget.disabled = false;
     }
+  });
+}
+
+/** Rappels de séance : « la veille au soir » et « le jour même », heures réglables. */
+function remindersCard() {
+  return `<section class="card" id="rem-card"><h2>Rappels de séance</h2>
+    <p class="muted">Deux notifications possibles, chacune avec son heure : la veille au soir (anticiper) et le jour même (ne pas oublier). Rien les jours de repos.</p>
+    <div id="rem-body"><button class="btn" id="rem-load">Afficher les réglages</button></div></section>`;
+}
+
+const remRow = (k, label, cfg) => `<label class="check rem-on"><input type="checkbox" name="${k}-on" ${cfg.enabled ? 'checked' : ''}> ${label}</label>
+  <label class="field rem-time">Heure<input type="time" name="${k}-time" value="${esc(cfg.time)}"></label>`;
+
+function renderReminders(prefs, msg = '') {
+  const body = view.querySelector('#rem-body');
+  if (!body) return;
+  if (!pushSupported()) {
+    body.innerHTML = '<p class="muted">Pour recevoir les rappels, ouvre l\'app depuis l\'icône de ton écran d\'accueil (pas dans Safari).</p>';
+    return;
+  }
+  body.innerHTML = `<form id="rem-form">
+    <p class="lbl">La veille au soir</p>${remRow('eve', 'Activer', prefs.eve)}
+    <p class="lbl">Le jour même</p>${remRow('day', 'Activer', prefs.day)}
+    <p class="error">${esc(msg)}</p>
+    <button class="btn primary" type="submit">${prefs.subscribed ? 'Enregistrer' : 'Activer les rappels'}</button>
+    ${prefs.subscribed ? '<button class="btn ghost" type="button" id="rem-off">Désactiver tous les rappels</button>' : ''}
+  </form>`;
+  body.querySelector('#rem-form').addEventListener('submit', (ev) => saveReminders(ev, prefs.subscribed));
+  body.querySelector('#rem-off')?.addEventListener('click', async () => {
+    try { await disablePush(); toast('Rappels désactivés.'); renderReminders({ subscribed: false, eve: prefs.eve, day: prefs.day }); }
+    catch (ex) { toast(ex.message); }
+  });
+}
+
+function readReminders(form) {
+  return {
+    eve: { enabled: form['eve-on'].checked, time: form['eve-time'].value || '20:00' },
+    day: { enabled: form['day-on'].checked, time: form['day-time'].value || '07:00' },
+  };
+}
+
+async function saveReminders(ev, alreadyOn) {
+  ev.preventDefault();
+  const form = ev.currentTarget;
+  const btn = form.querySelector('[type=submit]');
+  btn.disabled = true;
+  const prefs = readReminders(form);
+  try {
+    if (alreadyOn) await updatePushPrefs(prefs); else await enablePush(prefs);
+    toast('Rappels enregistrés.');
+    renderReminders({ subscribed: true, ...prefs });
+  } catch (ex) {
+    btn.disabled = false;
+    form.querySelector('.error').textContent = ex.message;
+  }
+}
+
+function bindReminders() {
+  view.querySelector('#rem-load')?.addEventListener('click', async (ev) => {
+    ev.currentTarget.disabled = true;
+    try {
+      const p = pushSupported() ? await loadPushPrefs() : { eve: { enabled: true, time: '20:00' }, day: { enabled: true, time: '07:00' }, subscribed: false };
+      renderReminders(p);
+    } catch (ex) { toast(ex.message); ev.currentTarget.disabled = false; }
   });
 }

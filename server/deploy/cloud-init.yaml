@@ -50,7 +50,8 @@ write_files:
       git cat-file -e origin/main:server/app.py 2>/dev/null || exit 0
       [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] && exit 0
       git checkout --quiet -B main origin/main
-      /opt/runcoach-venv/bin/pip install --quiet -r server/requirements.txt
+      # Une dépendance qui ne s'installe pas ne doit jamais empêcher le redémarrage (le code tolère l'absence d'un extra).
+      /opt/runcoach-venv/bin/pip install --quiet -r server/requirements.txt || true
       systemctl restart runcoach
 
   - path: /etc/systemd/system/runcoach-update.service

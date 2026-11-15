@@ -487,3 +487,7 @@ svg { flex: none; }
 .proposal .actions { margin-top: 10px; }
 /* Date du jour (haut de l'écran Aujourd'hui) : plus grande, casse normale, lisible à côté du titre géant */
 .today > .eyebrow:first-child { font-size: 0.95rem; letter-spacing: 0.02em; text-transform: none; font-weight: 600; color: color-mix(in srgb, var(--text) 70%, var(--bg)); margin: 6px 0 2px; }
+/* Rappels */
+#rem-form .lbl { margin: 14px 0 4px; font-weight: 600; font-size: 0.85rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+.rem-time { margin-top: 6px; } .rem-time input { width: auto; }
+#rem-form .btn { width: 100%; margin-top: 10px; }
