@@ -75,11 +75,12 @@ function initMap() {
 
 function setStart(pt, recenter = true) {
   state.routeStart = pt; persist();
+  // On active la recherche dès qu'un départ est posé, même si la carte n'a pas pu se charger (réseau).
+  const btn = view.querySelector('#r-find'); if (btn) btn.disabled = false;
   if (!map) return;
   if (startMarker) startMarker.setLatLng([pt.lat, pt.lon]);
   else startMarker = window.L.marker([pt.lat, pt.lon]).addTo(map);
   if (recenter) map.setView([pt.lat, pt.lon], 14);
-  const btn = view.querySelector('#r-find'); if (btn) btn.disabled = false;
 }
 
 function useGeolocation() {

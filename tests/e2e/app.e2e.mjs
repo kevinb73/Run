@@ -324,6 +324,19 @@ test('trouver une boucle : saisie de la clé puis écran avec distance et terrai
   noErrors(p);
 });
 
+test('boucle : « Ma position » active « Trouver des boucles » même sans carte chargée', async () => {
+  const p = await newPage(env.browser);
+  await p.context().grantPermissions(['geolocation']);
+  await p.context().setGeolocation({ latitude: 45.566, longitude: 5.92 });
+  await seed(p, { extra: { orsKey: 'TEST' } });
+  await p.evaluate(() => { location.hash = '#/route/2.2'; }); await p.waitForTimeout(400);
+  // Selon l'environnement, la carte (Leaflet) charge ou non ; dans les deux cas « Ma position » doit activer la recherche.
+  await p.click('#r-here'); await p.waitForTimeout(1500);
+  assert.deepEqual((await stored(p)).routeStart, { lat: 45.566, lon: 5.92 }, 'position enregistrée');
+  assert.ok(!(await p.locator('#r-find').isDisabled()), 'recherche activée même sans carte');
+  noErrors(p);
+});
+
 test('toutes les pages s\'ouvrent sans erreur', async () => {
   const p = await newPage(env.browser);
   await seed(p);
