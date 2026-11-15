@@ -1,8 +1,8 @@
 // Écran « Trouver une boucle » : carte + calcul d'itinéraire en boucle (OpenRouteService, côté app).
 // Le calcul tourne sur l'iPhone avec la clé perso de l'utilisateur ; rien ne passe par le serveur.
-import { loopRequest, geocodeUrl, parseLoop, toGpx, bounds, TERRAINS, overpassQuery, parseNature, drivingUrl, OVERPASS_ENDPOINTS } from '../engine/route.js';
+import { loopRequest, geocodeUrl, parseLoop, toGpx, bounds, TERRAINS, drivingUrl } from '../engine/route.js';
 import { esc } from '../format.js';
-import { state, persist, view, toast, today, showSheet, closeSheet } from '../core.js';
+import { state, persist, view, toast, today } from '../core.js';
 
 const LEAFLET_CSS = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';
 const LEAFLET_JS = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js';
@@ -51,9 +51,7 @@ export function renderRoute(arg) {
         <button class="btn" id="r-here">📍 Ma position</button>
         <button class="btn" id="r-search">Chercher une adresse</button>
       </div>
-      <p class="muted small">Tu peux aussi toucher la carte pour poser le point de départ.</p>
-      <label class="field">Coins nature jusqu'à<select id="r-radius">${[[8000, '10 min de voiture'], [16000, '20 min'], [26000, '30 min']].map(([m, l]) => `<option value="${m}" ${(state.routeRadius ?? 8000) === m ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-      <button class="btn" id="r-nature">🌳 Coins nature à proximité</button>
+      <p class="muted small">Tu peux aussi toucher la carte pour poser le point de départ. Pour un parcours nature, place le départ sur un chemin ou une piste cyclable.</p>
       <button class="btn primary" id="r-find" disabled>Trouver des boucles</button>
     </section>
     <div id="r-results"></div>
@@ -62,7 +60,6 @@ export function renderRoute(arg) {
   loadLeaflet().then(initMap).catch((e) => toast(e.message));
   view.querySelector('#r-here').addEventListener('click', useGeolocation);
   view.querySelector('#r-search').addEventListener('click', searchAddress);
-  view.querySelector('#r-nature').addEventListener('click', findNature);
   view.querySelector('#r-find').addEventListener('click', findLoops);
   view.querySelector('#r-terrain').addEventListener('change', (e) => { state.routeTerrain = e.target.value; persist(); });
 }
@@ -107,47 +104,6 @@ async function searchAddress() {
     setStart({ lat, lon });
     toast(f.properties?.label ?? 'Départ placé.');
   } catch (e) { toast(e.message); }
-}
-
-/** Interroge Overpass en essayant plusieurs serveurs, avec un délai max (le service public est parfois lent). */
-async function overpassFetch(query) {
-  let lastErr = new Error('Recherche nature indisponible, réessaie dans un instant.');
-  for (const url of OVERPASS_ENDPOINTS) {
-    const ctrl = new AbortController();
-    const to = setTimeout(() => ctrl.abort(), 22000);
-    try {
-      const res = await fetch(url, { method: 'POST', body: query, signal: ctrl.signal });
-      clearTimeout(to);
-      if (res.ok) return res.json();
-    } catch (e) { clearTimeout(to); lastErr = e.name === 'AbortError' ? new Error('Recherche trop longue (serveur chargé). Réessaie.') : lastErr; }
-  }
-  throw lastErr;
-}
-
-/** Cherche des coins nature (parcs, forêts, pistes cyclables) à ~10 min de voiture et propose d'y partir. */
-async function findNature() {
-  const center = state.routeStart;
-  if (!center) { toast('Place d\'abord un point de départ (ta position ou une adresse).'); return; }
-  const radius = Number(view.querySelector('#r-radius')?.value) || 8000;
-  state.routeRadius = radius; persist();
-  const btn = view.querySelector('#r-nature'); btn.disabled = true; btn.textContent = 'Recherche… (10-20 s)';
-  try {
-    const json = await overpassFetch(overpassQuery(center, radius));
-    const spots = parseNature(json, center);
-    if (!spots.length) throw new Error('Pas de coin nature nommé trouvé dans les environs.');
-    showSheet(`<h2>Coins nature à proximité</h2>
-      <p class="muted">À vol d'oiseau depuis ton point. Choisis-en un : la boucle se calculera là-bas.</p>
-      ${spots.map((s) => `<button class="btn adv-opt" data-spot="${esc(JSON.stringify({ lat: s.lat, lon: s.lon }))}">
-        <span><strong>${esc(s.name)}</strong><small class="muted">${esc(s.label)} · ${(s.distanceM / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} km${s.distanceM > 1500 ? ' 🚗' : ''}</small></span></button>`).join('')}
-      <button class="btn ghost" data-close>Annuler</button>`, (sheet) => {
-      sheet.querySelectorAll('[data-spot]').forEach((b) => b.addEventListener('click', () => {
-        setStart(JSON.parse(b.dataset.spot));
-        closeSheet();
-        toast('Départ posé sur le coin nature. Choisis « Pistes cyclables » et lance la recherche.');
-      }));
-    });
-  } catch (e) { toast(e.message); }
-  finally { btn.disabled = false; btn.textContent = '🌳 Coins nature à proximité'; }
 }
 
 async function findLoops() {
