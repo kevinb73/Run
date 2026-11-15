@@ -76,6 +76,7 @@ Objectif : réussir le **Yo-Yo test de début de saison (septembre 2027)**, quel
 
 | Élément | Détail |
 |---|---|
+| Version standard possible sans la circulaire | Le **bloc d'entraînement est générique** (intermittent 15/15 et 30/30, navettes, sprints répétés, affûtage) : codable sans l'info officielle. Seule l'estimation de réussite a besoin du palier requis → le laisser **réglable** dans l'app (défaut : Yo-Yo IR1, variante la plus courante), à préciser quand Kevin aura la circulaire |
 | Option de profil | « Je suis arbitre » : date du test, variante du Yo-Yo test, palier requis pour la catégorie |
 | Bloc spécifique | 8–10 semaines avant le test (≈ début juillet) : intermittent 15/15 et 30/30, navettes avec demi-tours, sprints répétés, affûtage la dernière semaine |
 | Tests blancs | Toutes les 4–6 semaines, protocole + bande-son dans l'app, saisie du palier atteint |
@@ -95,7 +96,21 @@ Piste commerciale associée : niche « préparation physique des arbitres » (vo
 | 4.2 | Prédiction 10 km dans Progrès | Quand la sortie longue dépasse 10–12 km | Petit |
 | 4.3 | Suivi des chaussures (km par paire) | Changer avant usure | Petit |
 | 4.4 | Ajustement chaleur (> 25 °C) | Utile à partir du printemps | Petit |
-| 4.5 | **Trouver une boucle** de la distance du jour autour de soi (carte OpenStreetMap, calcul OpenRouteService/GraphHopper, préférence terrain souple/plat) ; envoi sur la montre si l'API le permet, sinon fichier GPX | En attendant : « Parcours aller-retour » de la Forerunner 965. Pas avant plusieurs semaines de course | ~½ journée |
+| 4.5 | **Trouver une boucle** (prochain dev, à coder en session dédiée) — voir cahier des charges ci-dessous | Le manque de la Forerunner 965 : on ne peut pas imposer le **type de terrain** | ~½ journée |
+
+### 4.5 — Trouver une boucle : cahier des charges (demandé par Kevin)
+
+Le vrai manque de Garmin « Parcours aller-retour » : il part de la position mais **n'impose pas le type de terrain**. Objectif : l'utilisateur choisit ses conditions, quitte à démarrer un peu plus loin de chez lui.
+
+| Élément | Détail |
+|---|---|
+| Entrées utilisateur | Point de départ (position ou adresse), **distance** (par défaut celle de la séance du jour), **type de terrain** : pistes cyclables / chemins / parcs / **éviter les routes**, revêtement (bitume vs terre), plat vs vallonné |
+| Données | OpenStreetMap (tags : `cycleway`, `footway`, `path`, `surface=*`) pour filtrer le réseau |
+| Calcul de boucle | OpenRouteService (profil piéton + options « éviter », endpoint *round trip*) ou GraphHopper ; appel **côté app** (clé API perso) pour ne pas dépendre du réseau du serveur Hetzner |
+| Carte | Leaflet + tuiles OSM dans l'app |
+| Sortie | Aperçu sur carte + **fichier GPX** à importer dans Garmin Connect (envoi direct sur la montre seulement si l'API non officielle le permet) |
+| À tester pour de vrai | Que les filtres (pistes cyclables près de Montmélian) donnent bien une boucle correcte avant de livrer |
+| Point ouvert | Vérifier la limite gratuite d'OpenRouteService (≈ 2 000 requêtes/jour) et si le point de départ peut être déplacé (« un peu plus loin de chez moi ») |
 
 ---
 
