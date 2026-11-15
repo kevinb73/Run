@@ -167,6 +167,7 @@ Niche la plus prometteuse : **préparation physique des arbitres** (tests obliga
 | v0.37 | Correctif d'affichage : la date du jour n'est plus mordue par l'accent du grand titre (« SÉANCE FAITE ») |
 | v0.38 | Date du jour (Aujourd'hui) plus grande et en casse normale, lisible à côté du grand titre |
 | v0.39 | Rappels de séance (web push) : « la veille au soir » et « le jour même », heures réglables, activables séparément ; planificateur serveur, clés VAPID auto-générées |
+| v0.40 | Sommeil / forme du jour toujours affichés (même les jours de repos, avec « pas encore reçu ») ; « Faire une autre séance aujourd'hui » : sélecteur pour avancer n'importe quelle course **ou renfo** à aujourd'hui |
 
 ## Coûts récurrents
 

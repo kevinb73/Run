@@ -491,3 +491,8 @@ svg { flex: none; }
 #rem-form .lbl { margin: 14px 0 4px; font-weight: 600; font-size: 0.85rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
 .rem-time { margin-top: 6px; } .rem-time input { width: auto; }
 #rem-form .btn { width: 100%; margin-top: 10px; }
+/* Sélecteur « avancer une séance » + bloc sommeil */
+.adv-opt { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; margin-top: 8px; }
+.adv-opt .icon { width: 26px; height: 26px; flex: none; color: var(--muted); }
+.adv-opt small { display: block; margin-top: 2px; }
+.sleep-card { padding: 12px 14px; }

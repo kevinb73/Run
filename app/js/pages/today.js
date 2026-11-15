@@ -1,6 +1,6 @@
 import { PHASES, SPORTS } from '../engine/plan.js';
 import { adaptPlan, recentStats, currentWeek } from '../engine/adapt.js';
-import { canAddBonus, addBonus, canMoveToToday, moveSession, downgradeToEasy, findSafeDay, missedKeySession, makeUp, shortenEasy, HARD_TYPES } from '../engine/reschedule.js';
+import { canAddBonus, addBonus, canMoveToToday, moveSession, movableToToday, downgradeToEasy, findSafeDay, missedKeySession, makeUp, shortenEasy, HARD_TYPES } from '../engine/reschedule.js';
 import { loadStatus, manualActivities, LOAD_LABELS } from '../engine/load.js';
 import { readinessAdvice, formClass, LEVEL_FR, HRV_FR } from '../engine/readiness.js';
 import { api } from '../garmin.js';
@@ -147,8 +147,11 @@ export function renderToday() {
     ${pauseBlock(t)}
     ${painBlock(t)}
     ${next ? (next.date === t ? todayHero(next, t, canMove, bonusOk) : todayState(t) + nextCard(next, t, canMove, bonusOk)) : finished}
+    ${!ranToday && !painStop && !onPause(t) && movableToToday(p, state.log, t).length
+      ? '<button class="btn ghost move-today" id="advance">Faire une autre séance aujourd\'hui</button>' : ''}
     ${proposalsCard(t)}
     ${celebrationCard(t)}
+    ${sleepBlock(t)}
     ${strengthToday(t)}
     <header class="cycle-strip">${hero}</header>
     ${missed.length ? `<section class="card warn"><p><strong>${missed.length} séance(s) passée(s) sans retour.</strong> Indique si tu les as faites : c'est ce qui permet d'adapter le plan.</p>${missed.map((s) => sessionCard(s)).join('')}</section>` : ''}
@@ -166,6 +169,7 @@ export function renderToday() {
   view.querySelector('#new-cycle')?.addEventListener('click', newCycle);
   view.querySelector('[data-move]')?.addEventListener('click', (ev) => moveToToday(ev.currentTarget.dataset.move));
   view.querySelector('#add-bonus')?.addEventListener('click', addBonusToday);
+  view.querySelector('#advance')?.addEventListener('click', advanceSheet);
   view.querySelectorAll('[data-feel]').forEach((b) => b.addEventListener('click', () => {
     const [id, feel] = b.dataset.feel.split(':');
     state.log[id] = { ...state.log[id], feel };
@@ -184,7 +188,7 @@ export function renderToday() {
     weeklyCoach();
     detectTestResults();
     await analyzePending();
-    await refreshReadiness(next);
+    await refreshReadiness();
     return pushWeek({ silent: true });
   });
 }
@@ -218,15 +222,34 @@ export function loadBlock(t) {
       <button class="btn" id="load-ease" data-id="${nextHard.id}">Alléger cette séance</button>` : ''}</section>`;
 }
 
-export async function refreshReadiness(next) {
+export async function refreshReadiness() {
   const t = today();
-  if (!garminOn() || !next || next.date !== t || state.readiness?.date === t) return;
+  // On récupère la forme du jour même les jours de repos : c'est aussi le canal du score de sommeil.
+  if (!garminOn() || state.readiness?.date === t) return;
   try {
     const r = await api(state.garmin, 'GET', `/readiness?day=${t}`);
     state.readiness = { date: t, data: r, handled: false };
     persist();
-    if (formClass(r) && (location.hash === '' || location.hash === '#/')) renderToday();
+    if (location.hash === '' || location.hash === '#/') renderToday();
   } catch { /* non bloquant */ }
+}
+
+/** Sommeil et forme du jour, toujours affichés (pour vérifier que Garmin a bien tout envoyé). */
+export function sleepBlock(t) {
+  if (!garminOn()) return '';
+  const rd = state.readiness;
+  if (rd?.date !== t) return '<section class="card sleep-card"><p class="muted small">😴 Vérification du sommeil et de la forme du jour…</p></section>';
+  const r = rd.data || {};
+  if (r.sleepScore != null || r.hrvStatus || r.score != null) {
+    const bits = [
+      r.sleepScore != null ? `😴 <strong>Sommeil ${r.sleepScore}/100</strong>` : '😴 Sommeil : pas encore reçu',
+      r.hrvStatus ? `VFC ${HRV_FR[r.hrvStatus] ?? r.hrvStatus.toLowerCase()}` : null,
+      r.score != null ? `disponibilité ${r.score}/100` : null,
+      r.recoveryHours ? `récup. ${r.recoveryHours} h` : null,
+    ].filter(Boolean);
+    return `<section class="card sleep-card"><p class="muted small">${bits.join(' · ')} · pris en compte dans ta forme du jour</p></section>`;
+  }
+  return `<section class="card sleep-card"><p class="muted small">😴 Sommeil pas encore reçu de Garmin. Porte ta montre la nuit, puis ouvre Garmin Connect pour synchroniser (ça peut prendre quelques heures après le réveil).</p></section>`;
 }
 
 export function readinessBlock(t, next) {
@@ -237,7 +260,6 @@ export function readinessBlock(t, next) {
   if (!advice) return '';
   const bits = [r.score != null ? `disponibilité ${r.score}/100 (${LEVEL_FR[r.level] ?? '—'})` : null,
     r.hrvStatus ? `VFC ${HRV_FR[r.hrvStatus] ?? r.hrvStatus.toLowerCase()}` : null,
-    r.sleepScore != null ? `sommeil ${r.sleepScore}/100` : null,
     r.recoveryHours ? `récupération restante ${r.recoveryHours} h` : null].filter(Boolean);
   const actions = rd.handled ? '' : advice.action === 'swap' || advice.action === 'suggest'
     ? `<div class="actions"><button class="btn ghost" id="rd-keep">Garder</button><button class="btn primary" id="rd-ease">Alléger</button></div>`
@@ -381,6 +403,44 @@ export function moveToToday(id) {
   }
   repushIfNeeded([id, swappedWith].filter(Boolean));
   if (location.hash === `#/session/${id}`) route(); else location.hash = `#/session/${id}`;
+}
+
+/** Sélecteur : amener à aujourd'hui la course ou le renfo de son choix (en forme, ou fatigué et on veut plus doux). */
+function advanceSheet() {
+  const t = today();
+  const list = movableToToday(state.plan, state.log, t);
+  if (!list.length) { toast('Aucune séance à avancer.'); return; }
+  const meta = (s) => (s.type === 'strength' ? `renforcement · ~${Math.round(s.min)} min`
+    : `${Number(s.km).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} km · ~${Math.round(s.min)} min`);
+  showSheet(`<h2>Faire une séance aujourd'hui</h2>
+    <p class="muted">Choisis la séance à amener à aujourd'hui. Celle d'aujourd'hui, si tu en as une, prendra sa place.</p>
+    ${list.map((s) => `<button class="btn adv-opt" data-adv="${esc(s.id)}"><span class="icon">${iconOf(s)}</span>
+      <span><strong>${esc(s.title)}</strong><small class="muted">${esc(dateShort(s.date))} · ${meta(s)}</small></span></button>`).join('')}
+    <button class="btn ghost" data-close>Annuler</button>`, (sheet) => {
+    sheet.querySelectorAll('[data-adv]').forEach((b) => b.addEventListener('click', () => {
+      const s = findSession(b.dataset.adv);
+      closeSheet();
+      if (s.type === 'strength') advanceStrength(s.id); else moveToToday(s.id);
+    }));
+  });
+}
+
+/** Avance un renforcement à aujourd'hui sans toucher à la course du jour (les deux peuvent coexister). */
+function advanceStrength(id) {
+  const t = today();
+  const s = findSession(id);
+  const from = s.date;
+  const copy = structuredClone(state.plan);
+  const moved = copy.weeks.flatMap((w) => w.sessions).find((x) => x.id === id);
+  moved.date = t;
+  moved.movedFrom = moved.movedFrom ?? from;
+  copy.weeks.forEach((w) => w.sessions.sort((a, b) => a.date.localeCompare(b.date)));
+  state.plan = copy;
+  persist();
+  repushIfNeeded([id]);
+  showSheet(`<h2>Renforcement avancé</h2><p>Ton renforcement est prévu aujourd'hui. Le ${esc(dateLong(from))} n'en a plus.</p>
+    <button class="btn primary" data-close>OK</button>`);
+  location.hash = `#/session/${id}`;
 }
 
 export function doAdapt(newRace = null) {
