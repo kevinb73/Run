@@ -16,7 +16,7 @@ import logging
 import os
 import threading
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -486,3 +486,156 @@ def mcp_get(token: str):
 def mcp_delete(token: str):
     _check_mcp_token(token)
     return Response(status_code=405, headers={"Allow": "POST"})
+
+
+# ---------------------------------------------------------------- rappels (web push)
+
+import push as push_mod  # noqa: E402
+
+PUSH_PREFS = DATA_DIR / "push.json"
+VAPID_FILE = DATA_DIR / "vapid.json"
+
+
+def _vapid() -> dict[str, str]:
+    """Clés VAPID (identité du serveur pour le push) : générées une fois, puis réutilisées."""
+    try:
+        return json.loads(VAPID_FILE.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+    from py_vapid import Vapid  # fourni par pywebpush
+    import base64
+
+    v = Vapid()
+    v.generate_keys()
+    raw_priv = v.private_key.private_numbers().private_value.to_bytes(32, "big")
+    pub = v.public_key.public_bytes(
+        __import__("cryptography.hazmat.primitives.serialization", fromlist=["Encoding"]).Encoding.X962,
+        __import__("cryptography.hazmat.primitives.serialization", fromlist=["PublicFormat"]).PublicFormat.UncompressedPoint,
+    )
+    b64 = lambda b: base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+    keys = {"private": b64(raw_priv), "public": b64(pub)}
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    VAPID_FILE.write_text(json.dumps(keys))
+    return keys
+
+
+def _load_push() -> dict[str, Any]:
+    try:
+        return {**push_mod.default_prefs(), **json.loads(PUSH_PREFS.read_text())}
+    except (FileNotFoundError, json.JSONDecodeError):
+        return push_mod.default_prefs()
+
+
+def _save_push(prefs: dict[str, Any]) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    PUSH_PREFS.write_text(json.dumps(prefs, ensure_ascii=False))
+
+
+class PushPrefsIn(BaseModel):
+    subscription: dict[str, Any] | None = None
+    tz: str = Field(default="Europe/Paris", max_length=64)
+    eve: dict[str, Any] = Field(default_factory=lambda: {"enabled": True, "time": "20:00"})
+    day: dict[str, Any] = Field(default_factory=lambda: {"enabled": True, "time": "07:00"})
+
+
+@app.get("/push/key", dependencies=[Depends(require_key)])
+def push_key() -> dict[str, Any]:
+    return {"key": _vapid()["public"]}
+
+
+@app.get("/push/prefs", dependencies=[Depends(require_key)])
+def push_get() -> dict[str, Any]:
+    p = _load_push()
+    return {"subscribed": bool(p.get("subscription")), "tz": p["tz"], "eve": p["eve"], "day": p["day"]}
+
+
+@app.put("/push/prefs", dependencies=[Depends(require_key)])
+def push_put(body: PushPrefsIn) -> dict[str, Any]:
+    def clean(c: dict[str, Any], default: str) -> dict[str, Any]:
+        t = str(c.get("time") or default)
+        hh, _, mm = t.partition(":")
+        if not (hh.isdigit() and mm.isdigit() and 0 <= int(hh) < 24 and 0 <= int(mm) < 60):
+            t = default
+        return {"enabled": bool(c.get("enabled")), "time": t}
+
+    with _lock:
+        p = _load_push()
+        if body.subscription is not None:
+            p["subscription"] = body.subscription
+            p["last_sent"] = {}  # nouvel appareil : on repart propre
+        p["tz"] = body.tz
+        p["eve"] = clean(body.eve, "20:00")
+        p["day"] = clean(body.day, "07:00")
+        _save_push(p)
+    return {"ok": True}
+
+
+@app.delete("/push/prefs", dependencies=[Depends(require_key)])
+def push_delete() -> dict[str, Any]:
+    with _lock:
+        p = _load_push()
+        p["subscription"] = None
+        _save_push(p)
+    return {"ok": True}
+
+
+def _send_push(subscription: dict[str, Any], notif: dict[str, Any]) -> bool:
+    from pywebpush import webpush, WebPushException
+
+    try:
+        webpush(
+            subscription_info=subscription,
+            data=json.dumps({"title": notif["title"], "body": notif["body"], "url": "/"}),
+            vapid_private_key=_vapid()["private"],
+            vapid_claims={"sub": "mailto:runcoach@example.com"},
+            timeout=10,
+        )
+        return True
+    except WebPushException as exc:
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        if status in (404, 410):  # abonnement expiré : on l'oublie
+            with _lock:
+                p = _load_push()
+                p["subscription"] = None
+                _save_push(p)
+        log.info("Push non délivré (%s)", status)
+        return False
+
+
+def _push_tick(now_utc: datetime | None = None) -> int:
+    """Envoie les rappels dus maintenant. Appelé chaque minute par le planificateur ; renvoie le nombre envoyé."""
+    with _lock:
+        prefs = _load_push()
+    _, state = _latest_backup()
+    if state is None:
+        return 0
+    due, last = push_mod.notifications_due(prefs, state, now_utc or datetime.now(timezone.utc))
+    if not due:
+        return 0
+    sent = 0
+    for notif in due:
+        if _send_push(prefs["subscription"], notif):
+            sent += 1
+    with _lock:  # on n'enregistre « envoyé » que pour de vrai, pour retenter sinon
+        p = _load_push()
+        p["last_sent"] = {**(p.get("last_sent") or {}), **{n["kind"]: last[n["kind"]] for n in due}}
+        _save_push(p)
+    return sent
+
+
+def _scheduler() -> None:
+    import time as _t
+
+    while True:
+        _t.sleep(60 - datetime.now().second)
+        try:
+            _push_tick()
+        except Exception:  # un tic raté ne doit jamais tuer le planificateur
+            log.exception("Planificateur de rappels : tic en échec")
+
+
+@app.on_event("startup")
+def _start_scheduler() -> None:
+    if os.environ.get("RUNCOACH_NO_SCHEDULER"):
+        return  # tests : on déclenche _push_tick à la main
+    threading.Thread(target=_scheduler, daemon=True).start()

@@ -269,6 +269,22 @@ test('ChatGPT propose, l\'utilisateur applique ou refuse dans l\'app', async () 
   noErrors(p);
 });
 
+test('rappels : la carte charge les réglages depuis le serveur (2 heures)', async () => {
+  const p = await newPage(env.browser);
+  await seed(p, { extra: { garmin: GARMIN_CFG }, route: '#/profile' });
+  await p.waitForTimeout(400);
+  assert.ok(await p.locator('#rem-card').count(), 'carte Rappels présente');
+  await p.click('#rem-load'); await p.waitForTimeout(400);
+  // Selon le support push du navigateur de test : soit le formulaire, soit le message « ouvre depuis l'icône ».
+  if (await p.locator('#rem-form').count()) {
+    assert.equal(await p.locator('#rem-form [name=eve-time]').inputValue(), '20:00');
+    assert.equal(await p.locator('#rem-form [name=day-time]').inputValue(), '07:00');
+  } else {
+    assert.ok(await p.locator('#rem-body').innerText());
+  }
+  noErrors(p);
+});
+
 test('toutes les pages s\'ouvrent sans erreur', async () => {
   const p = await newPage(env.browser);
   await seed(p);

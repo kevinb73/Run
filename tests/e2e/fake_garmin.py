@@ -11,6 +11,7 @@ import tempfile
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("RUNCOACH_DATA", tempfile.mkdtemp())
 os.environ["RUNCOACH_API_KEY"] = "k"
+os.environ["RUNCOACH_NO_SCHEDULER"] = "1"  # pas d'envoi de rappels en arrière-plan pendant les tests
 sys.path.insert(0, os.path.join(ROOT, "server"))
 
 import uvicorn  # noqa: E402
