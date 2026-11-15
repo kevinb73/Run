@@ -43,3 +43,40 @@ test('toGpx : trace valide, caractères échappés', () => {
 test('bounds : cadre englobant', () => {
   assert.deepEqual(bounds([[45.5, 6.05], [45.52, 6.08], [45.48, 6.02]]), [[45.48, 6.02], [45.52, 6.08]]);
 });
+
+test('distanceM : distance à vol d\'oiseau plausible', async () => {
+  const { distanceM } = await import('../app/js/engine/route.js');
+  const d = distanceM({ lat: 45.5, lon: 6.05 }, { lat: 45.51, lon: 6.05 });
+  assert.ok(d > 1050 && d < 1150, `~1,1 km attendu, obtenu ${d}`);
+  assert.equal(distanceM({ lat: 45.5, lon: 6.05 }, { lat: 45.5, lon: 6.05 }), 0);
+});
+
+test('drivingUrl : itinéraire voiture Apple Plans', async () => {
+  const { drivingUrl } = await import('../app/js/engine/route.js');
+  const u = drivingUrl({ lat: 45.5, lon: 6.05 }, 'Véloroute');
+  assert.match(u, /maps\.apple\.com/);
+  assert.match(u, /daddr=45\.5,6\.05/);
+  assert.match(u, /dirflg=d/);
+  assert.match(u, /q=V%C3%A9loroute/);
+});
+
+test('overpassQuery + parseNature : coins nature nommés, classés par type puis proximité', async () => {
+  const { overpassQuery, parseNature } = await import('../app/js/engine/route.js');
+  const q = overpassQuery({ lat: 45.5, lon: 6.05 }, 5000);
+  assert.match(q, /around:5000,45.5,6.05/);
+  assert.match(q, /cycleway/);
+  assert.match(q, /out center/);
+  const json = { elements: [
+    { type: 'way', tags: { name: 'Parc du Repos', leisure: 'park' }, center: { lat: 45.502, lon: 6.051 } },
+    { type: 'relation', tags: { name: 'ViaRhôna', route: 'bicycle' }, center: { lat: 45.6, lon: 6.1 } },
+    { type: 'way', tags: { name: 'Bois de Chartreuse', natural: 'wood' }, center: { lat: 45.505, lon: 6.06 } },
+    { type: 'way', tags: { highway: 'cycleway' }, center: { lat: 45.5, lon: 6.05 } }, // sans nom : ignoré
+    { type: 'way', tags: { name: 'Parc du Repos', leisure: 'park' }, center: { lat: 45.9, lon: 6.9 } }, // doublon nom
+  ] };
+  const r = parseNature(json, { lat: 45.5, lon: 6.05 });
+  assert.equal(r[0].name, 'ViaRhôna', 'piste cyclable prioritaire');
+  assert.equal(r[0].label, 'Piste cyclable');
+  assert.ok(r.some((x) => x.name === 'Bois de Chartreuse' && x.label === 'Forêt'));
+  assert.ok(r.find((x) => x.name === 'Parc du Repos').distanceM < 500, 'le parc proche est gardé, pas le lointain');
+  assert.equal(r.filter((x) => x.name === 'Parc du Repos').length, 1, 'doublon retiré');
+});

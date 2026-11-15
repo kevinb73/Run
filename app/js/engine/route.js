@@ -57,3 +57,51 @@ export function bounds(coords) {
   const lats = coords.map((c) => c[0]), lons = coords.map((c) => c[1]);
   return [[Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]];
 }
+
+/** Distance à vol d'oiseau entre deux points (mètres). */
+export function distanceM(a, b) {
+  const R = 6371000, rad = (x) => (x * Math.PI) / 180;
+  const dLat = rad(b.lat - a.lat), dLon = rad(b.lon - a.lon);
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLon / 2) ** 2;
+  return Math.round(2 * R * Math.asin(Math.sqrt(s)));
+}
+
+/** Ouvre l'itinéraire voiture vers un point dans l'app Plans de l'iPhone. */
+export const drivingUrl = (pt, label = 'Départ de la boucle') =>
+  `https://maps.apple.com/?daddr=${pt.lat},${pt.lon}&q=${encodeURIComponent(label)}&dirflg=d`;
+
+const NATURE = [
+  { type: 'cyclable', label: 'Piste cyclable', priority: 4, match: (tg) => tg.highway === 'cycleway' || tg.route === 'bicycle' },
+  { type: 'voie_verte', label: 'Voie verte / chemin', priority: 3, match: (tg) => tg.highway === 'path' || tg.highway === 'footway' && tg.surface && tg.surface !== 'paved' },
+  { type: 'foret', label: 'Forêt', priority: 3, match: (tg) => tg.natural === 'wood' || tg.landuse === 'forest' },
+  { type: 'parc', label: 'Parc', priority: 2, match: (tg) => tg.leisure === 'park' || tg.leisure === 'nature_reserve' },
+];
+
+/** Requête Overpass : espaces verts et pistes autour d'un point (rayon en mètres). */
+export function overpassQuery(center, radiusM = 8000) {
+  const a = `(around:${Math.round(radiusM)},${center.lat},${center.lon})`;
+  return `[out:json][timeout:25];(`
+    + `way["highway"="cycleway"]${a};relation["route"="bicycle"]${a};`
+    + `way["leisure"="park"]${a};way["leisure"="nature_reserve"]${a};`
+    + `way["landuse"="forest"]${a};way["natural"="wood"]${a};`
+    + `way["highway"="path"]["surface"!~"paved|asphalt"]${a};`
+    + `);out center tags 120;`;
+}
+
+/** Réponse Overpass → coins nature nommés, classés (type prioritaire + proximité). */
+export function parseNature(json, origin, max = 8) {
+  const seen = new Set();
+  const out = [];
+  for (const el of json?.elements ?? []) {
+    const tg = el.tags ?? {};
+    const name = tg.name;
+    if (!name || seen.has(name)) continue;
+    const kind = NATURE.find((k) => k.match(tg));
+    if (!kind) continue;
+    const pt = el.center ? { lat: el.center.lat, lon: el.center.lon } : (el.lat != null ? { lat: el.lat, lon: el.lon } : null);
+    if (!pt) continue;
+    seen.add(name);
+    out.push({ name, type: kind.type, label: kind.label, priority: kind.priority, lat: pt.lat, lon: pt.lon, distanceM: distanceM(origin, pt) });
+  }
+  return out.sort((a, b) => (b.priority - a.priority) || (a.distanceM - b.distanceM)).slice(0, max);
+}
