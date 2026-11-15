@@ -285,6 +285,27 @@ test('rappels : la carte charge les réglages depuis le serveur (2 heures)', asy
   noErrors(p);
 });
 
+test('sommeil toujours affiché + avancer une autre séance (course / renfo) à aujourd\'hui', async () => {
+  const p = await newPage(env.browser);
+  await seed(p, { extra: { garmin: GARMIN_CFG } });
+  await p.waitForTimeout(2500); // sync + readiness
+  assert.ok(await p.locator('.sleep-card').count(), 'carte sommeil présente');
+  assert.match(await p.locator('.sleep-card').innerText(), /[Ss]ommeil/);
+  // Sélecteur « faire une autre séance aujourd'hui »
+  await p.click('#advance'); await p.waitForTimeout(300);
+  const opts = await p.locator('[data-adv]').count();
+  assert.ok(opts >= 2, 'plusieurs séances proposées');
+  const st0 = await stored(p);
+  const renfo = st0.plan.weeks.flatMap((w) => w.sessions).find((x) => x.type === 'strength' && x.date > '2026-11-14');
+  await p.locator(`[data-adv="${renfo.id}"]`).click(); await p.waitForTimeout(400);
+  await p.click('[data-close]');
+  const st = await stored(p);
+  const moved = st.plan.weeks.flatMap((w) => w.sessions).find((x) => x.id === renfo.id);
+  assert.equal(moved.date, '2026-11-14', 'renfo avancé à aujourd\'hui');
+  assert.equal(moved.movedFrom, renfo.date);
+  noErrors(p);
+});
+
 test('toutes les pages s\'ouvrent sans erreur', async () => {
   const p = await newPage(env.browser);
   await seed(p);

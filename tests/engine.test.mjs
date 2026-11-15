@@ -698,3 +698,18 @@ test('records, jalons, série : calcul et nouveautés à célébrer', async () =
   assert.deepEqual(streak({ plan, log }, addDaysT(plan.weeks[2].start, 2)), { current: 2, best: 2 });
   assert.deepEqual(streak({ plan, log }, addDaysT(plan.weeks[3].start, 2)), { current: 0, best: 2 });
 });
+
+test('avancer une séance : liste courses + renfo à venir, jamais faites ni jours de sport', async () => {
+  const { movableToToday } = await import('../app/js/engine/reschedule.js');
+  const otherSports = [{ day: 2, kind: 'futsal' }, { day: 5, kind: 'referee' }];
+  const plan = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, weeklyKm: 5, longestRunKm: 3, days: [0, 2, 6], longRunDay: 6, otherSports }, { today: TODAY });
+  const t = '2026-11-15'; // dimanche de repos (avant le début lundi 16)
+  const list = movableToToday(plan, {}, t);
+  assert.ok(list.length >= 2, 'au moins course + renfo proposés');
+  assert.ok(list.every((s) => s.date > t), 'rien avant aujourd\'hui');
+  assert.ok(list.some((s) => s.type === 'strength'), 'le renfo est proposé');
+  assert.ok(list.every((s) => s.type !== 'sport' && s.type !== 'race'), 'ni sport ni course objectif');
+  // une séance faite n'est plus proposée
+  const first = list[0];
+  assert.ok(!movableToToday(plan, { [first.id]: { done: true } }, t).some((s) => s.id === first.id));
+});

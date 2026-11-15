@@ -190,3 +190,15 @@ export function unavailableOptions(plan, log, id, today) {
   }
   return out.sort((a, b) => a.score - b.score).slice(0, 3).map(({ score, ...o }) => o);
 }
+
+/**
+ * Séances que l'on peut avancer à aujourd'hui : courses à venir (≤ 8 j, non faites) et renforcements.
+ * Sert au sélecteur « faire une autre séance aujourd'hui » (l'utilisateur se sent en forme, ou fatigué et veut une séance plus douce).
+ */
+export function movableToToday(plan, log, today) {
+  return plan.weeks.flatMap((w) => w.sessions)
+    .filter((s) => s.date > today && s.date <= addDays(today, 8)
+      && !log[s.id]?.done && !log[s.id]?.skipped && s.type !== 'race'
+      && (s.type === 'strength' || (!s.optional && s.type !== 'sport')))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
