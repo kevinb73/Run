@@ -1,8 +1,8 @@
 // Écran « Trouver une boucle » : carte + calcul d'itinéraire en boucle (OpenRouteService, côté app).
 // Le calcul tourne sur l'iPhone avec la clé perso de l'utilisateur ; rien ne passe par le serveur.
-import { loopRequest, geocodeUrl, parseLoop, toGpx, bounds, TERRAINS } from '../engine/route.js';
+import { loopRequest, geocodeUrl, parseLoop, toGpx, bounds, TERRAINS, overpassQuery, parseNature, drivingUrl } from '../engine/route.js';
 import { esc } from '../format.js';
-import { state, persist, view, toast, today } from '../core.js';
+import { state, persist, view, toast, today, showSheet, closeSheet } from '../core.js';
 
 const LEAFLET_CSS = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';
 const LEAFLET_JS = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js';
@@ -52,6 +52,7 @@ export function renderRoute(arg) {
         <button class="btn" id="r-search">Chercher une adresse</button>
       </div>
       <p class="muted small">Tu peux aussi toucher la carte pour poser le point de départ.</p>
+      <button class="btn" id="r-nature">🌳 Coins nature à proximité</button>
       <button class="btn primary" id="r-find" disabled>Trouver des boucles</button>
     </section>
     <div id="r-results"></div>
@@ -60,6 +61,7 @@ export function renderRoute(arg) {
   loadLeaflet().then(initMap).catch((e) => toast(e.message));
   view.querySelector('#r-here').addEventListener('click', useGeolocation);
   view.querySelector('#r-search').addEventListener('click', searchAddress);
+  view.querySelector('#r-nature').addEventListener('click', findNature);
   view.querySelector('#r-find').addEventListener('click', findLoops);
   view.querySelector('#r-terrain').addEventListener('change', (e) => { state.routeTerrain = e.target.value; persist(); });
 }
@@ -106,6 +108,31 @@ async function searchAddress() {
   } catch (e) { toast(e.message); }
 }
 
+/** Cherche des coins nature (parcs, forêts, pistes cyclables) à ~10 min de voiture et propose d'y partir. */
+async function findNature() {
+  const center = state.routeStart;
+  if (!center) { toast('Place d\'abord un point de départ (ta position ou une adresse).'); return; }
+  const btn = view.querySelector('#r-nature'); btn.disabled = true; btn.textContent = 'Recherche…';
+  try {
+    const res = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: overpassQuery(center, 8000) });
+    if (!res.ok) throw new Error('Recherche nature indisponible, réessaie.');
+    const spots = parseNature(await res.json(), center);
+    if (!spots.length) throw new Error('Pas de coin nature nommé trouvé dans les environs.');
+    showSheet(`<h2>Coins nature à proximité</h2>
+      <p class="muted">À vol d'oiseau depuis ton point. Choisis-en un : la boucle se calculera là-bas.</p>
+      ${spots.map((s) => `<button class="btn adv-opt" data-spot="${esc(JSON.stringify({ lat: s.lat, lon: s.lon }))}">
+        <span><strong>${esc(s.name)}</strong><small class="muted">${esc(s.label)} · ${(s.distanceM / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} km${s.distanceM > 1500 ? ' 🚗' : ''}</small></span></button>`).join('')}
+      <button class="btn ghost" data-close>Annuler</button>`, (sheet) => {
+      sheet.querySelectorAll('[data-spot]').forEach((b) => b.addEventListener('click', () => {
+        setStart(JSON.parse(b.dataset.spot));
+        closeSheet();
+        toast('Départ posé sur le coin nature. Choisis « Pistes cyclables » et lance la recherche.');
+      }));
+    });
+  } catch (e) { toast(e.message); }
+  finally { btn.disabled = false; btn.textContent = '🌳 Coins nature à proximité'; }
+}
+
 async function findLoops() {
   const km = Number(view.querySelector('#r-km').value) || 5;
   const terrain = view.querySelector('#r-terrain').value;
@@ -133,9 +160,11 @@ function renderResults() {
   const el = view.querySelector('#r-results');
   el.innerHTML = `<section class="card"><h2>Boucles proposées</h2>
     <div class="loop-opts">${loops.map((l, i) => `<button class="btn loop-opt ${i === picked ? 'primary' : ''}" data-loop="${i}">${l.km.toLocaleString('fr-FR')} km · ${l.ascentM} m D+</button>`).join('')}</div>
-    <button class="btn primary" id="r-gpx">Exporter le GPX</button></section>`;
+    <button class="btn primary" id="r-gpx">Exporter le GPX</button>
+    <button class="btn" id="r-drive">🚗 M'y emmener (itinéraire voiture)</button></section>`;
   el.querySelectorAll('[data-loop]').forEach((b) => b.addEventListener('click', () => { picked = Number(b.dataset.loop); drawLoop(); renderResults(); }));
   el.querySelector('#r-gpx').addEventListener('click', exportGpx);
+  el.querySelector('#r-drive').addEventListener('click', () => { if (state.routeStart) window.open(drivingUrl(state.routeStart), '_blank'); });
 }
 
 function exportGpx() {
