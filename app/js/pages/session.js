@@ -46,6 +46,7 @@ export function renderSession(id) {
     ${s.shortened ? '<p class="muted small">Raccourcie : forme du jour basse.</p>' : ''}
     ${analysisCard(state.log[s.id]?.analysis)}
     ${state.log[s.id]?.done && !state.log[s.id]?.replacedBy ? `<a class="btn recap-btn" href="#/recap/${s.id}">Voir le récap de la séance</a>` : ''}
+    ${['easy', 'long', 'threshold', 'intervals', 'hills', 'fartlek', 'race-pace'].includes(s.type) && s.km ? `<a class="btn ghost" href="#/route/${s.km}">🗺️ Trouver un parcours (${Number(s.km).toLocaleString('fr-FR')} km)</a>` : ''}
     ${s.optional ? '' : garminSessionCard(s)}
     ${s.date <= t ? `<section class="card">
       <h2>Ton retour</h2>

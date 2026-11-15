@@ -96,7 +96,7 @@ Piste commerciale associée : niche « préparation physique des arbitres » (vo
 | 4.2 | Prédiction 10 km dans Progrès | Quand la sortie longue dépasse 10–12 km | Petit |
 | 4.3 | Suivi des chaussures (km par paire) | Changer avant usure | Petit |
 | 4.4 | Ajustement chaleur (> 25 °C) | Utile à partir du printemps | Petit |
-| 4.5 | **Trouver une boucle** (prochain dev, à coder en session dédiée) — voir cahier des charges ci-dessous | Le manque de la Forerunner 965 : on ne peut pas imposer le **type de terrain** | ~½ journée |
+| 4.5 | ~~Trouver une boucle~~ → **v1 fait en v0.41** (départ GPS/adresse/carte, distance, terrain routes/nature/pistes cyclables, 3 boucles proposées, export GPX ; OpenRouteService côté app). À affiner avec tests réels | — | — |
 
 ### 4.5 — Trouver une boucle : cahier des charges (demandé par Kevin)
 
@@ -168,6 +168,7 @@ Niche la plus prometteuse : **préparation physique des arbitres** (tests obliga
 | v0.38 | Date du jour (Aujourd'hui) plus grande et en casse normale, lisible à côté du grand titre |
 | v0.39 | Rappels de séance (web push) : « la veille au soir » et « le jour même », heures réglables, activables séparément ; planificateur serveur, clés VAPID auto-générées |
 | v0.40 | Sommeil / forme du jour toujours affichés (même les jours de repos, avec « pas encore reçu ») ; « Faire une autre séance aujourd'hui » : sélecteur pour avancer n'importe quelle course **ou renfo** à aujourd'hui |
+| v0.41 | « Trouver une boucle » : carte (Leaflet/OSM), départ au choix (position, adresse, point sur la carte), distance de la séance, terrain (routes / chemins nature / pistes cyclables), 3 boucles proposées, export GPX ; calcul OpenRouteService côté app (clé perso) |
 
 ## Coûts récurrents
 
