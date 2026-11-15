@@ -169,6 +169,7 @@ Niche la plus prometteuse : **préparation physique des arbitres** (tests obliga
 | v0.39 | Rappels de séance (web push) : « la veille au soir » et « le jour même », heures réglables, activables séparément ; planificateur serveur, clés VAPID auto-générées |
 | v0.40 | Sommeil / forme du jour toujours affichés (même les jours de repos, avec « pas encore reçu ») ; « Faire une autre séance aujourd'hui » : sélecteur pour avancer n'importe quelle course **ou renfo** à aujourd'hui |
 | v0.41 | « Trouver une boucle » : carte (Leaflet/OSM), départ au choix (position, adresse, point sur la carte), distance de la séance, terrain (routes / chemins nature / pistes cyclables), 3 boucles proposées, export GPX ; calcul OpenRouteService côté app (clé perso) |
+| v0.42 | Boucle v2 : « Coins nature à proximité » (parcs, forêts, pistes cyclables à ~10 min, via Overpass/OSM) pour partir d'un vrai spot ; « M'y emmener » (itinéraire voiture Apple Plans) |
 
 ## Coûts récurrents
 
