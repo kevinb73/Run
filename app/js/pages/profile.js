@@ -95,7 +95,7 @@ export function renderProfile() {
         <button class="btn" id="redo">Refaire le questionnaire</button>
       </div>
     </section>
-    <p class="muted center small">Run Coach · v0.42</p>`;
+    <p class="muted center small">Run Coach · v0.43</p>`;
 
   bindGarminProfile();
   view.querySelector('#pause-btn')?.addEventListener('click', pauseSheet);

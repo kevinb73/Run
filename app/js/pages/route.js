@@ -52,6 +52,7 @@ export function renderRoute(arg) {
         <button class="btn" id="r-search">Chercher une adresse</button>
       </div>
       <p class="muted small">Tu peux aussi toucher la carte pour poser le point de départ.</p>
+      <label class="field">Coins nature jusqu'à<select id="r-radius">${[[8000, '10 min de voiture'], [16000, '20 min'], [26000, '30 min']].map(([m, l]) => `<option value="${m}" ${(state.routeRadius ?? 8000) === m ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <button class="btn" id="r-nature">🌳 Coins nature à proximité</button>
       <button class="btn primary" id="r-find" disabled>Trouver des boucles</button>
     </section>
@@ -112,9 +113,11 @@ async function searchAddress() {
 async function findNature() {
   const center = state.routeStart;
   if (!center) { toast('Place d\'abord un point de départ (ta position ou une adresse).'); return; }
+  const radius = Number(view.querySelector('#r-radius')?.value) || 8000;
+  state.routeRadius = radius; persist();
   const btn = view.querySelector('#r-nature'); btn.disabled = true; btn.textContent = 'Recherche…';
   try {
-    const res = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: overpassQuery(center, 8000) });
+    const res = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: overpassQuery(center, radius) });
     if (!res.ok) throw new Error('Recherche nature indisponible, réessaie.');
     const spots = parseNature(await res.json(), center);
     if (!spots.length) throw new Error('Pas de coin nature nommé trouvé dans les environs.');
