@@ -172,6 +172,7 @@ Niche la plus prometteuse : **préparation physique des arbitres** (tests obliga
 | v0.42 | Boucle v2 : « Coins nature à proximité » (parcs, forêts, pistes cyclables à ~10 min, via Overpass/OSM) pour partir d'un vrai spot ; « M'y emmener » (itinéraire voiture Apple Plans) |
 | v0.43 | Boucle : rayon de recherche des coins nature réglable (10 / 20 / 30 min de voiture) |
 | v0.44 | Boucle : recherche nature accélérée (requête Overpass allégée, 2 serveurs, délai max) ; typologie de chaque boucle (dénivelé réel + % chemins/pistes vs route) |
+| v0.45 | Boucle : recherche « Coins nature » débranchée (Overpass trop lent/instable) ; chercheur de boucles de base conservé (position/adresse/carte, terrain, typologie, GPX, « M'y emmener »). Code moteur gardé pour réactivation éventuelle |
 
 ## Coûts récurrents
 
