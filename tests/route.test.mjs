@@ -10,6 +10,7 @@ test('loopRequest : profil selon le terrain, distance en mètres, départ unique
   assert.deepEqual(r.body.coordinates, [[6.05, 45.5]]);
   assert.equal(r.body.options.round_trip.length, 5000);
   assert.equal(r.body.options.round_trip.seed, 3);
+  assert.deepEqual(r.body.extra_info, ['waytype', 'surface']);
   assert.match(loopRequest(START, 5, { terrain: 'nature' }).url, /foot-hiking/);
   assert.match(loopRequest(START, 5).url, /foot-walking/, 'défaut = marche');
   assert.equal(TERRAINS.cyclable.ors, 'cycling-regular');
@@ -23,12 +24,19 @@ test('geocodeUrl : recherche d\'adresse en France, biaisée vers le point proche
   assert.match(u, /boundary\.country=FR/);
 });
 
-test('parseLoop : GeoJSON → points [lat,lon], distance, dénivelé', () => {
-  const g = { features: [{ geometry: { coordinates: [[6.05, 45.5, 300], [6.06, 45.51, 310]] }, properties: { summary: { distance: 5120, ascent: 42 } } }] };
+test('parseLoop : points, distance, dénivelé (résumé ou calculé), % hors-route', () => {
+  const g = { features: [{ geometry: { coordinates: [[6.05, 45.5, 300], [6.06, 45.51, 310]] }, properties: {
+    summary: { distance: 5120, ascent: 42 },
+    extras: { waytype: { summary: [{ value: 6, distance: 3000, amount: 60 }, { value: 2, distance: 2000, amount: 40 }] } } } }] };
   const p = parseLoop(g);
   assert.deepEqual(p.coords[0], [45.5, 6.05]);
   assert.equal(p.km, 5.1);
   assert.equal(p.ascentM, 42);
+  assert.equal(p.offRoadPct, 60, 'cycleway (60) vs route (40) → 60% chemins');
+  // sans résumé d'ascension : calcul depuis les altitudes (+10 m)
+  const g2 = { features: [{ geometry: { coordinates: [[6, 45, 100], [6, 45, 108], [6, 45, 105], [6, 45, 107]] }, properties: { summary: { distance: 1000 } } }] };
+  assert.equal(parseLoop(g2).ascentM, 10);
+  assert.equal(parseLoop(g2).offRoadPct, null, 'pas d\'info type de voie → null');
   assert.throws(() => parseLoop({ features: [] }), /Aucun parcours/);
 });
 
@@ -64,7 +72,7 @@ test('overpassQuery + parseNature : coins nature nommés, classés par type puis
   const { overpassQuery, parseNature } = await import('../app/js/engine/route.js');
   const q = overpassQuery({ lat: 45.5, lon: 6.05 }, 5000);
   assert.match(q, /around:5000,45.5,6.05/);
-  assert.match(q, /cycleway/);
+  assert.match(q, /cycleway.*name/s);
   assert.match(q, /out center/);
   const json = { elements: [
     { type: 'way', tags: { name: 'Parc du Repos', leisure: 'park' }, center: { lat: 45.502, lon: 6.051 } },

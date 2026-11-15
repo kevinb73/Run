@@ -23,8 +23,35 @@ export function loopRequest(start, km, { seed = 1, terrain = 'route' } = {}) {
       options: { round_trip: { length: Math.round(km * 1000), points: 4, seed } },
       instructions: false,
       elevation: true,
+      extra_info: ['waytype', 'surface'],
     },
   };
+}
+
+// Types de voie OpenRouteService : ce qui est « chemin / piste » vs « route ».
+const OFFROAD_WAYTYPES = new Set([4, 5, 6, 7]); // Path, Track, Cycleway, Footway
+const ROAD_WAYTYPES = new Set([1, 2, 3]);       // State Road, Road, Street
+
+/** % de la distance passée sur chemins/pistes (vs route), d'après extras.waytype d'ORS. */
+function offRoadPct(extras) {
+  const sum = extras?.waytype?.summary;
+  if (!Array.isArray(sum) || !sum.length) return null;
+  let off = 0, road = 0;
+  for (const seg of sum) {
+    if (OFFROAD_WAYTYPES.has(seg.value)) off += seg.amount ?? 0;
+    else if (ROAD_WAYTYPES.has(seg.value)) road += seg.amount ?? 0;
+  }
+  return off + road > 0 ? Math.round((off / (off + road)) * 100) : null;
+}
+
+/** Dénivelé positif cumulé à partir des altitudes de la trace (fiable même si ORS ne le résume pas). */
+function ascentFrom(coords3d) {
+  let up = 0;
+  for (let i = 1; i < coords3d.length; i++) {
+    const d = (coords3d[i][2] ?? 0) - (coords3d[i - 1][2] ?? 0);
+    if (d > 0) up += d;
+  }
+  return Math.round(up);
 }
 
 /** Recherche d'adresse (point de départ) ; renvoie une URL GET (la clé est ajoutée par l'app). */
@@ -34,13 +61,15 @@ export function geocodeUrl(text, near) {
   return `${ORS}/geocode/search?${p}`;
 }
 
-/** Lit la réponse GeoJSON d'OpenRouteService → { coords: [[lat,lon]…], km, ascentM }. */
+/** Lit la réponse GeoJSON d'OpenRouteService → { coords, km, ascentM, offRoadPct }. */
 export function parseLoop(geojson) {
   const f = geojson?.features?.[0];
   if (!f?.geometry?.coordinates?.length) throw new Error('Aucun parcours trouvé ici. Essaie une autre distance ou un autre terrain.');
-  const coords = f.geometry.coordinates.map(([lon, lat]) => [lat, lon]);
+  const raw = f.geometry.coordinates;
+  const coords = raw.map(([lon, lat]) => [lat, lon]);
   const s = f.properties?.summary ?? {};
-  return { coords, km: Math.round((s.distance ?? 0) / 100) / 10, ascentM: Math.round(s.ascent ?? 0) };
+  const ascentM = s.ascent != null ? Math.round(s.ascent) : ascentFrom(raw);
+  return { coords, km: Math.round((s.distance ?? 0) / 100) / 10, ascentM, offRoadPct: offRoadPct(f.properties?.extras) };
 }
 
 /** Parcours (liste de points) → fichier GPX importable dans Garmin Connect. */
@@ -77,16 +106,23 @@ const NATURE = [
   { type: 'parc', label: 'Parc', priority: 2, match: (tg) => tg.leisure === 'park' || tg.leisure === 'nature_reserve' },
 ];
 
-/** Requête Overpass : espaces verts et pistes autour d'un point (rayon en mètres). */
+/** Requête Overpass : espaces verts et pistes NOMMÉS autour d'un point (rayon en mètres).
+ *  Allégée pour la vitesse : on ne demande que des éléments nommés, catégories ciblées, résultat plafonné. */
 export function overpassQuery(center, radiusM = 8000) {
   const a = `(around:${Math.round(radiusM)},${center.lat},${center.lon})`;
-  return `[out:json][timeout:25];(`
-    + `way["highway"="cycleway"]${a};relation["route"="bicycle"]${a};`
-    + `way["leisure"="park"]${a};way["leisure"="nature_reserve"]${a};`
-    + `way["landuse"="forest"]${a};way["natural"="wood"]${a};`
-    + `way["highway"="path"]["surface"!~"paved|asphalt"]${a};`
-    + `);out center tags 120;`;
+  return `[out:json][timeout:20];(`
+    + `way["highway"="cycleway"]["name"]${a};`
+    + `way["leisure"~"park|nature_reserve"]["name"]${a};`
+    + `way["landuse"="forest"]["name"]${a};`
+    + `way["natural"="wood"]["name"]${a};`
+    + `);out center tags 60;`;
 }
+
+/** Instances Overpass, de la plus rapide à la plus disponible : on essaie dans l'ordre. */
+export const OVERPASS_ENDPOINTS = [
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass-api.de/api/interpreter',
+];
 
 /** Réponse Overpass → coins nature nommés, classés (type prioritaire + proximité). */
 export function parseNature(json, origin, max = 8) {

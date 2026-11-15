@@ -1,6 +1,6 @@
 // Écran « Trouver une boucle » : carte + calcul d'itinéraire en boucle (OpenRouteService, côté app).
 // Le calcul tourne sur l'iPhone avec la clé perso de l'utilisateur ; rien ne passe par le serveur.
-import { loopRequest, geocodeUrl, parseLoop, toGpx, bounds, TERRAINS, overpassQuery, parseNature, drivingUrl } from '../engine/route.js';
+import { loopRequest, geocodeUrl, parseLoop, toGpx, bounds, TERRAINS, overpassQuery, parseNature, drivingUrl, OVERPASS_ENDPOINTS } from '../engine/route.js';
 import { esc } from '../format.js';
 import { state, persist, view, toast, today, showSheet, closeSheet } from '../core.js';
 
@@ -109,17 +109,31 @@ async function searchAddress() {
   } catch (e) { toast(e.message); }
 }
 
+/** Interroge Overpass en essayant plusieurs serveurs, avec un délai max (le service public est parfois lent). */
+async function overpassFetch(query) {
+  let lastErr = new Error('Recherche nature indisponible, réessaie dans un instant.');
+  for (const url of OVERPASS_ENDPOINTS) {
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 22000);
+    try {
+      const res = await fetch(url, { method: 'POST', body: query, signal: ctrl.signal });
+      clearTimeout(to);
+      if (res.ok) return res.json();
+    } catch (e) { clearTimeout(to); lastErr = e.name === 'AbortError' ? new Error('Recherche trop longue (serveur chargé). Réessaie.') : lastErr; }
+  }
+  throw lastErr;
+}
+
 /** Cherche des coins nature (parcs, forêts, pistes cyclables) à ~10 min de voiture et propose d'y partir. */
 async function findNature() {
   const center = state.routeStart;
   if (!center) { toast('Place d\'abord un point de départ (ta position ou une adresse).'); return; }
   const radius = Number(view.querySelector('#r-radius')?.value) || 8000;
   state.routeRadius = radius; persist();
-  const btn = view.querySelector('#r-nature'); btn.disabled = true; btn.textContent = 'Recherche…';
+  const btn = view.querySelector('#r-nature'); btn.disabled = true; btn.textContent = 'Recherche… (10-20 s)';
   try {
-    const res = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: overpassQuery(center, radius) });
-    if (!res.ok) throw new Error('Recherche nature indisponible, réessaie.');
-    const spots = parseNature(await res.json(), center);
+    const json = await overpassFetch(overpassQuery(center, radius));
+    const spots = parseNature(json, center);
     if (!spots.length) throw new Error('Pas de coin nature nommé trouvé dans les environs.');
     showSheet(`<h2>Coins nature à proximité</h2>
       <p class="muted">À vol d'oiseau depuis ton point. Choisis-en un : la boucle se calculera là-bas.</p>
@@ -162,7 +176,8 @@ function drawLoop() {
 function renderResults() {
   const el = view.querySelector('#r-results');
   el.innerHTML = `<section class="card"><h2>Boucles proposées</h2>
-    <div class="loop-opts">${loops.map((l, i) => `<button class="btn loop-opt ${i === picked ? 'primary' : ''}" data-loop="${i}">${l.km.toLocaleString('fr-FR')} km · ${l.ascentM} m D+</button>`).join('')}</div>
+    <div class="loop-opts">${loops.map((l, i) => `<button class="btn loop-opt ${i === picked ? 'primary' : ''}" data-loop="${i}">${l.km.toLocaleString('fr-FR')} km · ${l.ascentM} m D+${l.offRoadPct != null ? ` · ${l.offRoadPct}% chemins` : ''}</button>`).join('')}</div>
+    ${loops[picked] ? `<p class="muted small">Boucle choisie : <strong>${loops[picked].km.toLocaleString('fr-FR')} km</strong> · ${loops[picked].ascentM} m de dénivelé${loops[picked].offRoadPct != null ? ` · <strong>${loops[picked].offRoadPct}%</strong> sur chemins/pistes (le reste sur route)` : ' · composition inconnue'}.</p>` : ''}
     <button class="btn primary" id="r-gpx">Exporter le GPX</button>
     <button class="btn" id="r-drive">🚗 M'y emmener (itinéraire voiture)</button></section>`;
   el.querySelectorAll('[data-loop]').forEach((b) => b.addEventListener('click', () => { picked = Number(b.dataset.loop); drawLoop(); renderResults(); }));
