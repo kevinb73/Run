@@ -1,9 +1,9 @@
 // Cache "réseau d'abord" : l'app fonctionne hors ligne, et récupère les mises à jour dès qu'il y a du réseau.
-const CACHE = 'run-coach-v41';
+const CACHE = 'run-coach-v42';
 const ASSETS = [
   './', './index.html', './css/style.css', './manifest.webmanifest', './icons/icon.svg', './icons/apple-touch-icon.png',
   './js/app.js', './js/core.js', './js/sync.js', './js/care.js', './js/pages/onboarding.js', './js/pages/today.js', './js/pages/plan.js', './js/pages/session.js', './js/pages/recap.js', './js/pages/progress.js', './js/pages/profile.js', './js/store.js', './js/format.js', './js/onboarding.js',
-  './js/engine/vdot.js', './js/engine/plan.js', './js/engine/workouts.js', './js/engine/dates.js', './js/engine/adapt.js', './js/engine/reschedule.js', './js/engine/garminsync.js', './js/garmin.js', './js/progress.js', './js/icons.js', './fonts/anton-400.woff2', './fonts/inter-400.woff2', './fonts/inter-600.woff2', './fonts/inter-800.woff2', './js/engine/recap.js', './js/engine/recap-format.js', './js/engine/pause.js', './js/engine/pain.js', './js/engine/coach.js', './js/engine/analysis.js', './js/engine/easyfeedback.js', './js/engine/strength.js', './js/engine/replan.js', './js/engine/upgrade.js', './js/engine/monthly.js', './js/engine/records.js', './js/achievements.js', './js/proposals.js', './js/push.js', './js/engine/load.js', './js/engine/readiness.js',
+  './js/engine/vdot.js', './js/engine/plan.js', './js/engine/workouts.js', './js/engine/dates.js', './js/engine/adapt.js', './js/engine/reschedule.js', './js/engine/garminsync.js', './js/garmin.js', './js/progress.js', './js/icons.js', './fonts/anton-400.woff2', './fonts/inter-400.woff2', './fonts/inter-600.woff2', './fonts/inter-800.woff2', './js/engine/recap.js', './js/engine/recap-format.js', './js/engine/pause.js', './js/engine/pain.js', './js/engine/coach.js', './js/engine/analysis.js', './js/engine/easyfeedback.js', './js/engine/strength.js', './js/engine/replan.js', './js/engine/upgrade.js', './js/engine/monthly.js', './js/engine/records.js', './js/achievements.js', './js/proposals.js', './js/push.js', './js/engine/load.js', './js/engine/readiness.js', './js/engine/route.js', './js/pages/route.js',
 ];
 
 self.addEventListener('install', (e) => {
