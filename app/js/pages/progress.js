@@ -1,6 +1,7 @@
 import { lineChart, volumeChart as weeklyVolumeChart, progressData } from '../progress.js';
 import { esc, duration, dateShort, pace } from '../format.js';
 import { monthlySummary, availableMonths, monthLabel } from '../engine/monthly.js';
+import { LOAD_LABELS } from '../engine/load.js';
 import { state, today, view } from '../core.js';
 import { recordsCard } from '../achievements.js';
 
@@ -27,6 +28,9 @@ export function renderProgress() {
     <section class="card"><h2>Volume par semaine</h2>
       <p class="muted small"><span class="key key-done"></span> réalisé · <span class="key key-plan"></span> prévu (km)</p>
       ${weeklyVolumeChart(d.volume)}</section>
+    <section class="card"><h2>Forme &amp; fraîcheur</h2>
+      <p class="muted small">Ta <strong>forme</strong> = ta charge d'entraînement de fond ; elle monte quand tu t'entraînes régulièrement, et c'est la vraie preuve que tu progresses.${d.loadNow?.zone ? ` <strong>Fraîcheur</strong> aujourd'hui : ta charge récente est <strong>${esc(LOAD_LABELS[d.loadNow.zone])}</strong>.` : ''}</p>
+      ${lineChart(d.form, { fmt: (v) => Math.round(v), empty: 'Apparaîtra après ~2 semaines de séances enregistrées avec ta montre.' })}</section>
     ${d.tests.length ? `<section class="card"><h2>Tests VMA</h2><ul class="adj">${d.tests.map((x) => `<li>${esc(dateShort(x.date))} : ${x.vma.toFixed(1).replace('.', ',')} km/h</li>`).join('')}</ul></section>` : ''}
     <div id="chart-tip" class="chart-tip" hidden></div>`;
   bindChartTips();

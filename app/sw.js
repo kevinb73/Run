@@ -1,5 +1,5 @@
 // Cache "réseau d'abord" : l'app fonctionne hors ligne, et récupère les mises à jour dès qu'il y a du réseau.
-const CACHE = 'run-coach-v49';
+const CACHE = 'run-coach-v50';
 const ASSETS = [
   './', './index.html', './css/style.css', './manifest.webmanifest', './icons/icon.svg', './icons/apple-touch-icon.png',
   './js/app.js', './js/core.js', './js/sync.js', './js/care.js', './js/pages/onboarding.js', './js/pages/today.js', './js/pages/plan.js', './js/pages/session.js', './js/pages/recap.js', './js/pages/progress.js', './js/pages/profile.js', './js/store.js', './js/format.js', './js/onboarding.js',

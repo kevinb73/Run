@@ -338,6 +338,7 @@ a { color: inherit; }
 .recap-steps li b { color: var(--z-r); font-weight: 700; }
 .recap-steps li.ok b { color: var(--ok); }
 .recap-btn { width: 100%; margin: 4px 0 8px; }
+.hr-cue { background: var(--surface); border-radius: 12px; padding: 10px 12px; margin: 8px 0; }
 
 /* ----- Douleur & pause ----- */
 .card.danger { border-color: var(--z-r); }

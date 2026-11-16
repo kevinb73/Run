@@ -97,6 +97,7 @@ Piste commerciale associée : niche « préparation physique des arbitres » (vo
 | 4.3 | Suivi des chaussures (km par paire) | Changer avant usure | Petit |
 | 4.4 | Ajustement chaleur (> 25 °C) | Utile à partir du printemps | Petit |
 | 4.5 | ~~Trouver une boucle~~ → **retirée en v0.48**. Construite en v0.41 (carte Leaflet + OpenRouteService), puis supprimée : mal intégrée, seule fonction à dépendre d'une clé/CDN/réseau, surface à bugs pour un besoin faible (Kevin court un parcours connu ; la navigation de parcours se fait nativement dans la montre Garmin). Code conservé dans l'historique Git si besoin de la ressusciter | — | — |
+| 4.6 | **Variété des footings en phase Fondation** : formats de footing plus variés (allure, terrain, durée découpée), voire un peu de fartlek doux introduit plus tôt, pour casser la monotonie des premières semaines **sans** augmenter le risque de blessure. Enjeu = adhésion/motivation, pas physiologie (le plan a raison sur le fond : périodisation inversée, petite base) | À évaluer **après les premières semaines réelles** : l'ennui est-il un vrai frein pour Kevin, ou juste une inquiétude de départ ? | Moyen |
 
 ### 4.5 — Trouver une boucle : cahier des charges (demandé par Kevin)
 
@@ -173,6 +174,9 @@ Niche la plus prometteuse : **préparation physique des arbitres** (tests obliga
 | v0.43 | Boucle : rayon de recherche des coins nature réglable (10 / 20 / 30 min de voiture) |
 | v0.44 | Boucle : recherche nature accélérée (requête Overpass allégée, 2 serveurs, délai max) ; typologie de chaque boucle (dénivelé réel + % chemins/pistes vs route) |
 | v0.45 | Boucle : recherche « Coins nature » débranchée (Overpass trop lent/instable) ; chercheur de boucles de base conservé (position/adresse/carte, terrain, typologie, GPX, « M'y emmener »). Code moteur gardé pour réactivation éventuelle |
+| v0.46–0.47 | Boucle : bouton « Trouver un parcours » à la bonne largeur ; correctif « Ma position » (la recherche restait désactivée sans carte chargée) |
+| v0.48 | Retrait complet de « Trouver une boucle » (mal intégrée, seule fonction dépendante d'une clé/CDN/réseau ; navigation de parcours faite nativement dans la montre Garmin). Code gardé dans l'historique Git |
+| v0.49 | **Garde-fou FC sur les footings** : cible de zone facile en bpm affichée sur la séance (avant de courir) + verdict du récap en bpm au lieu du % FC max (calcul Karvonen, cohérent avec le moteur). **Courbe de forme** sur l'écran Progrès : évolution de la charge chronique (preuve visuelle du progrès) + fraîcheur du jour. Inspirés du benchmark Runna/TrainingPeaks |
 
 ## Coûts récurrents
 

@@ -321,6 +321,30 @@ test('charge : ratio aigu/chronique, futsal compris, et réduction du volume', a
   assert.ok(adjustment.reasons.some((r) => r.includes('20 %')));
 });
 
+test('zone facile en bpm : Karvonen si FC de repos connue, sinon % FC max', async () => {
+  const { easyHrCeiling } = await import('../app/js/engine/coach.js');
+  // Réserve de FC : 60 + 0,78 × (190 − 60) = 161
+  assert.equal(easyHrCeiling({ maxHr: 190, restHr: 60 }).bpm, 161);
+  assert.equal(easyHrCeiling({ maxHr: 190, restHr: 60 }).mode, 'reserve');
+  // Sans FC de repos : 0,84 × 190 = 160
+  assert.equal(easyHrCeiling({ maxHr: 190 }).bpm, 160);
+  assert.equal(easyHrCeiling({ maxHr: 190 }).mode, 'max');
+  assert.equal(easyHrCeiling(null), null);
+  assert.equal(easyHrCeiling({}), null);
+});
+
+test('courbe de forme : charge chronique dans le temps, seulement avec assez d\'historique', async () => {
+  const { loadTrend } = await import('../app/js/engine/load.js');
+  const t = '2026-12-20';
+  const act = (date, load) => ({ date, trainingLoad: load, durationSec: 3600 });
+  const acts = [];
+  for (let d = 56; d >= 0; d -= 2) { const x = new Date(t); x.setUTCDate(x.getUTCDate() - d); acts.push(act(x.toISOString().slice(0, 10), 60)); }
+  const trend = loadTrend(acts, t, null, { weeks: 8 });
+  assert.ok(trend.length >= 3, 'plusieurs points de forme');
+  assert.ok(trend.every((p) => p.fitness > 0 && p.date && p.zone), 'chaque point a une forme, une date et une fraîcheur');
+  assert.equal(loadTrend([act('2026-12-19', 50)], t, null).length, 0, 'aucun point sans historique suffisant');
+});
+
 test('forme du jour : séance dure décalée si forme très basse', async () => {
   const { readinessAdvice, formClass } = await import('../app/js/engine/readiness.js');
   const hard = { type: 'threshold' }, easy = { type: 'easy' };
@@ -365,7 +389,7 @@ test('récap : chiffres, prévu/réalisé, étapes et conclusion', async () => {
   assert.ok(r.stats.some((s) => s.label === 'Calories' && s.value === '380 kcal'));
   assert.ok(r.compare.every((c) => c.ok));
   assert.ok(r.conclusion[0].startsWith('Footing réussi'));
-  assert.ok(r.conclusion.some((c) => c.includes('79 % de ta FC max')));
+  assert.ok(r.conclusion.some((c) => c.includes('150 bpm, dans ta zone facile (sous 160 bpm)')));
   assert.ok(r.conclusion.at(-1).includes('Prochaine séance : Sortie longue'));
   // Étapes : séance structurée lancée depuis la montre (un tour par étape)
   const hills = plan.weeks.flatMap((x) => x.sessions).find((s) => s.type === 'fartlek' || s.type === 'hills');

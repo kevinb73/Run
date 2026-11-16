@@ -1,6 +1,7 @@
 import { SPORTS } from '../engine/plan.js';
 import { canMoveToToday, unavailableOptions, moveSession } from '../engine/reschedule.js';
 import { PAIN_ZONES, PAIN_LEVELS } from '../engine/pain.js';
+import { easyHrCeiling } from '../engine/coach.js';
 import { esc, pace, paceRange, duration, dateLong, dateShort, ZONES, stepDuration, KIND_LABEL, hm } from '../format.js';
 import { analysisCard, closeSheet, findSession, persist, showSheet, sportIcon, state, toast, today, view } from '../core.js';
 import { readTimeFields, timeFields } from './profile.js';
@@ -38,6 +39,7 @@ export function renderSession(id) {
     <p>${esc(s.description)}</p>
     ${s.alt ? `<section class="card alt-note"><p><strong>${sportIcon(s.alt)} Jour de ${SPORTS[s.alt].label.toLowerCase()} possible.</strong> Tu fais <strong>l'un ou l'autre</strong>, pas les deux. Si tu vas au ${SPORTS[s.alt].label.toLowerCase()}, indique-le ci-dessous : la séance sera comptée comme remplacée.</p></section>` : ''}
     ${s.steps.length ? stepsHTML(s.steps) : ''}
+    ${['easy', 'long'].includes(s.type) && easyHrCeiling(state.hr) ? `<p class="muted small hr-cue">💓 Zone facile : garde ton cœur <strong>sous ~${easyHrCeiling(state.hr).bpm} bpm</strong>. C'est en restant vraiment facile que tu construis l'endurance — quitte à marcher quelques secondes si ça monte.</p>` : ''}
     ${canMoveToToday(s, state.log, t) && !alreadyRan(t) ? `<button class="btn move-today" data-move="${s.id}">↻ Faire cette séance aujourd'hui</button>` : ''}
     ${!s.optional && s.date >= t && !state.log[s.id] && s.type !== 'race' ? '<button class="btn ghost move-today" id="unavail">Pas dispo ce jour-là</button>' : ''}
     ${s.movedFrom && s.movedFrom !== s.date ? `<p class="muted small">Déplacée (prévue initialement le ${esc(dateShort(s.movedFrom))}).</p>` : ''}

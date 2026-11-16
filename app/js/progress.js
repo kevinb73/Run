@@ -4,6 +4,7 @@
 
 import { predictTime } from './engine/vdot.js';
 import { addDays } from './engine/dates.js';
+import { loadStatus, loadTrend, manualActivities, LOAD_LABELS } from './engine/load.js';
 import { esc, duration, pace, dateShort } from './format.js';
 
 const W = 340, H = 150, PAD = { l: 44, r: 12, t: 12, b: 24 };
@@ -106,5 +107,14 @@ export function progressData(state, today) {
   const past = sessions.filter((s) => s.date < today && !s.optional && s.type !== 'race');
   const doneCount = past.filter((s) => state.log[s.id]?.done).length;
   const totalKm = volume.reduce((a, r) => a + r.done, 0);
-  return { level, eff, volume, tests, distLabel, regularity: past.length ? doneCount / past.length : null, doneCount, totalKm };
+
+  // 5. Forme (charge chronique) dans le temps + fraîcheur actuelle (ratio aigu/chronique)
+  const acts = [...Object.values(state.acts ?? {}), ...manualActivities(plan, state.log)];
+  const form = loadTrend(acts, today, state.hr).map((p) => ({
+    date: p.date, y: p.fitness,
+    tip: `${dateShort(p.date)} : forme ${p.fitness}${p.zone ? ` · fraîcheur ${LOAD_LABELS[p.zone]}` : ''}`,
+  }));
+  const loadNow = loadStatus(acts, today, state.hr);
+
+  return { level, eff, volume, tests, distLabel, form, loadNow, regularity: past.length ? doneCount / past.length : null, doneCount, totalKm };
 }

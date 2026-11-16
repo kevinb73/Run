@@ -50,3 +50,18 @@ export const LOAD_LABELS = {
   elevated: 'élevée',
   high: 'trop élevée',
 };
+
+/**
+ * Évolution de la « forme » (charge chronique) et de la fatigue (charge aiguë) dans le temps.
+ * Un point par semaine, sur les N dernières semaines, seulement là où il y a assez d'historique.
+ * @returns [{ date, fitness, fatigue, ratio, zone }]
+ */
+export function loadTrend(acts, today, hr, { weeks = 12 } = {}) {
+  const pts = [];
+  for (let w = weeks - 1; w >= 0; w--) {
+    const d = addDays(today, -w * 7);
+    const st = loadStatus(acts.filter((a) => a.date <= d), d, hr);
+    if (st.enoughData) pts.push({ date: d, fitness: st.chronic, fatigue: st.acute, ratio: st.ratio, zone: st.zone });
+  }
+  return pts;
+}
