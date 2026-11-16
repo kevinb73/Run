@@ -202,3 +202,36 @@ export function movableToToday(plan, log, today) {
       && (s.type === 'strength' || (!s.optional && s.type !== 'sport')))
     .sort((a, b) => a.date.localeCompare(b.date));
 }
+
+/**
+ * Reporte un renforcement à un autre jour, SANS toucher aux autres séances :
+ * le renfo coexiste avec une course (pas d'échange, pas de règle de séance dure).
+ */
+export function moveStrength(plan, id, toDate) {
+  const copy = structuredClone(plan);
+  const s = copy.weeks.flatMap((w) => w.sessions).find((x) => x.id === id);
+  if (!s || s.type !== 'strength') throw new Error('Séance de renforcement introuvable.');
+  s.movedFrom ??= s.date;
+  s.date = toDate;
+  copy.weeks.forEach((w) => w.sessions.sort((a, b) => a.date.localeCompare(b.date)));
+  return copy;
+}
+
+/**
+ * Jours où reporter un renforcement : d'aujourd'hui à +7 jours (dans la durée du plan),
+ * sauf sa date actuelle et un jour qui a déjà un renforcement non sauté.
+ */
+export function strengthMoveOptions(plan, log, id, today) {
+  const all = plan.weeks.flatMap((w) => w.sessions);
+  const s = all.find((x) => x.id === id);
+  if (!s || s.type !== 'strength') return [];
+  const lastDay = addDays(plan.weeks.at(-1).start, 6);
+  const out = [];
+  for (let k = 0; k <= 7; k++) {
+    const d = addDays(today, k);
+    if (d > lastDay || d === s.date) continue;
+    if (all.some((x) => x.type === 'strength' && x.id !== id && x.date === d && !log[x.id]?.skipped)) continue;
+    out.push(d);
+  }
+  return out;
+}

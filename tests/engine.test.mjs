@@ -345,6 +345,26 @@ test('courbe de forme : charge chronique dans le temps, seulement avec assez d\'
   assert.equal(loadTrend([act('2026-12-19', 50)], t, null).length, 0, 'aucun point sans historique suffisant');
 });
 
+test('reporter un renforcement : déplacé sans échange (coexiste avec la course), sa date est exclue des options', async () => {
+  const { moveStrength, strengthMoveOptions } = await import('../app/js/engine/reschedule.js');
+  const plan = generatePlan(base, { today: TODAY });
+  const renfo = plan.weeks.flatMap((w) => w.sessions).find((s) => s.type === 'strength');
+  assert.ok(renfo, 'le plan contient du renforcement');
+  const run = plan.weeks.flatMap((w) => w.sessions).find((s) => s.type === 'easy' && s.date !== renfo.date);
+  // Reporter le renfo sur le jour d'une course : la course ne bouge pas (coexistence, pas d'échange)
+  const moved = moveStrength(plan, renfo.id, run.date);
+  const movedRenfo = moved.weeks.flatMap((w) => w.sessions).find((s) => s.id === renfo.id);
+  const sameRun = moved.weeks.flatMap((w) => w.sessions).find((s) => s.id === run.id);
+  assert.equal(movedRenfo.date, run.date, 'renfo déplacé au jour voulu');
+  assert.equal(movedRenfo.movedFrom, renfo.date, 'origine mémorisée');
+  assert.equal(sameRun.date, run.date, 'la course n\'a pas bougé');
+  // Options : sa date actuelle est exclue, au moins un autre jour proposé
+  const opts = strengthMoveOptions(plan, {}, renfo.id, renfo.date);
+  assert.ok(!opts.includes(renfo.date), 'sa date actuelle est exclue');
+  assert.ok(opts.length >= 1, 'au moins un jour proposé');
+  assert.throws(() => moveStrength(plan, run.id, renfo.date), /renforcement introuvable/, 'refuse une séance non-renfo');
+});
+
 test('forme du jour : séance dure décalée si forme très basse', async () => {
   const { readinessAdvice, formClass } = await import('../app/js/engine/readiness.js');
   const hard = { type: 'threshold' }, easy = { type: 'easy' };
