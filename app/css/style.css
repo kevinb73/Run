@@ -337,7 +337,7 @@ a { color: inherit; }
 .recap-steps li.slow, .recap-steps li.fast { border-left-color: var(--z-r); }
 .recap-steps li b { color: var(--z-r); font-weight: 700; }
 .recap-steps li.ok b { color: var(--ok); }
-.recap-btn, .route-btn { width: 100%; margin: 4px 0 8px; }
+.recap-btn { width: 100%; margin: 4px 0 8px; }
 
 /* ----- Douleur & pause ----- */
 .card.danger { border-color: var(--z-r); }
@@ -496,10 +496,3 @@ svg { flex: none; }
 .adv-opt .icon { width: 26px; height: 26px; flex: none; color: var(--muted); }
 .adv-opt small { display: block; margin-top: 2px; }
 .sleep-card { padding: 12px 14px; }
-/* Trouver une boucle */
-.route-map { height: 320px; border-radius: 14px; margin: 8px 0 14px; background: var(--surface); }
-.route-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.loop-opts { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
-.loop-opt { flex: 1; min-width: 120px; }
-#r-results .btn.primary, #r-find { width: 100%; margin-top: 8px; }
-.leaflet-container { font: inherit; }

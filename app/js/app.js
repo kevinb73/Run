@@ -7,7 +7,6 @@ import { renderPlan } from './pages/plan.js';
 import { renderProfile } from './pages/profile.js';
 import { renderProgress, showMonth } from './pages/progress.js';
 import { renderRecap } from './pages/recap.js';
-import { renderRoute } from './pages/route.js';
 import { renderSession } from './pages/session.js';
 import { renderToday } from './pages/today.js';
 import { pushWeek, refreshPushed } from './sync.js';
@@ -65,7 +64,6 @@ export function route() {
     case 'profile': return renderProfile();
     case 'progress': return renderProgress();
     case 'recap': return renderRecap(arg);
-    case 'route': return renderRoute(arg);
     default: return renderToday();
   }
 }

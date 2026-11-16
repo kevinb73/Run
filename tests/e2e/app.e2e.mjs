@@ -306,37 +306,6 @@ test('sommeil toujours affiché + avancer une autre séance (course / renfo) à 
   noErrors(p);
 });
 
-test('trouver une boucle : saisie de la clé puis écran avec distance et terrain', async () => {
-  const p = await newPage(env.browser);
-  await seed(p);
-  // Lien depuis une séance de course
-  const run = (await stored(p)).plan.weeks[0].sessions.find((x) => x.type === 'easy');
-  await p.evaluate((id) => { location.hash = `#/session/${id}`; }, run.id); await p.waitForTimeout(300);
-  assert.ok(await p.locator('a[href^="#/route/"]').count(), 'lien Trouver un parcours sur la séance');
-  // Écran clé (aucune clé encore)
-  await p.evaluate(() => { location.hash = '#/route/5'; }); await p.waitForTimeout(300);
-  assert.ok(await p.locator('#k-form').count(), 'écran de saisie de la clé');
-  await p.fill('#k-ors', 'TEST_KEY'); await p.click('#k-form button[type=submit]'); await p.waitForTimeout(300);
-  assert.equal(await p.locator('#r-km').inputValue(), '5', 'distance pré-remplie depuis la séance');
-  assert.ok(await p.locator('#r-terrain option').count() >= 3, 'choix du terrain');
-  assert.ok(await p.locator('#r-find').isDisabled(), 'bouton Trouver désactivé tant qu\'il n\'y a pas de départ');
-  assert.equal((await stored(p)).orsKey, 'TEST_KEY', 'clé enregistrée localement');
-  noErrors(p);
-});
-
-test('boucle : « Ma position » active « Trouver des boucles » même sans carte chargée', async () => {
-  const p = await newPage(env.browser);
-  await p.context().grantPermissions(['geolocation']);
-  await p.context().setGeolocation({ latitude: 45.566, longitude: 5.92 });
-  await seed(p, { extra: { orsKey: 'TEST' } });
-  await p.evaluate(() => { location.hash = '#/route/2.2'; }); await p.waitForTimeout(400);
-  // Selon l'environnement, la carte (Leaflet) charge ou non ; dans les deux cas « Ma position » doit activer la recherche.
-  await p.click('#r-here'); await p.waitForTimeout(1500);
-  assert.deepEqual((await stored(p)).routeStart, { lat: 45.566, lon: 5.92 }, 'position enregistrée');
-  assert.ok(!(await p.locator('#r-find').isDisabled()), 'recherche activée même sans carte');
-  noErrors(p);
-});
-
 test('toutes les pages s\'ouvrent sans erreur', async () => {
   const p = await newPage(env.browser);
   await seed(p);

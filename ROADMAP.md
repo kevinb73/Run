@@ -96,7 +96,7 @@ Piste commerciale associée : niche « préparation physique des arbitres » (vo
 | 4.2 | Prédiction 10 km dans Progrès | Quand la sortie longue dépasse 10–12 km | Petit |
 | 4.3 | Suivi des chaussures (km par paire) | Changer avant usure | Petit |
 | 4.4 | Ajustement chaleur (> 25 °C) | Utile à partir du printemps | Petit |
-| 4.5 | ~~Trouver une boucle~~ → **v1 fait en v0.41** (départ GPS/adresse/carte, distance, terrain routes/nature/pistes cyclables, 3 boucles proposées, export GPX ; OpenRouteService côté app). À affiner avec tests réels | — | — |
+| 4.5 | ~~Trouver une boucle~~ → **retirée en v0.48**. Construite en v0.41 (carte Leaflet + OpenRouteService), puis supprimée : mal intégrée, seule fonction à dépendre d'une clé/CDN/réseau, surface à bugs pour un besoin faible (Kevin court un parcours connu ; la navigation de parcours se fait nativement dans la montre Garmin). Code conservé dans l'historique Git si besoin de la ressusciter | — | — |
 
 ### 4.5 — Trouver une boucle : cahier des charges (demandé par Kevin)
 
