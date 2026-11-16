@@ -1,5 +1,5 @@
 import { SPORTS } from '../engine/plan.js';
-import { canMoveToToday, unavailableOptions, moveSession } from '../engine/reschedule.js';
+import { canMoveToToday, unavailableOptions, moveSession, moveStrength, strengthMoveOptions } from '../engine/reschedule.js';
 import { PAIN_ZONES, PAIN_LEVELS } from '../engine/pain.js';
 import { easyHrCeiling } from '../engine/coach.js';
 import { esc, pace, paceRange, duration, dateLong, dateShort, ZONES, stepDuration, KIND_LABEL, hm } from '../format.js';
@@ -42,6 +42,7 @@ export function renderSession(id) {
     ${['easy', 'long'].includes(s.type) && easyHrCeiling(state.hr) ? `<p class="muted small hr-cue">💓 Zone facile : garde ton cœur <strong>sous ~${easyHrCeiling(state.hr).bpm} bpm</strong>. C'est en restant vraiment facile que tu construis l'endurance — quitte à marcher quelques secondes si ça monte.</p>` : ''}
     ${canMoveToToday(s, state.log, t) && !alreadyRan(t) ? `<button class="btn move-today" data-move="${s.id}">↻ Faire cette séance aujourd'hui</button>` : ''}
     ${!s.optional && s.date >= t && !state.log[s.id] && s.type !== 'race' ? '<button class="btn ghost move-today" id="unavail">Pas dispo ce jour-là</button>' : ''}
+    ${s.type === 'strength' && !state.log[s.id]?.done && !state.log[s.id]?.skipped && s.date >= t ? '<button class="btn ghost" id="postpone-strength">Reporter à un autre jour</button>' : ''}
     ${s.movedFrom && s.movedFrom !== s.date ? `<p class="muted small">Déplacée (prévue initialement le ${esc(dateShort(s.movedFrom))}).</p>` : ''}
     ${s.downgraded ? '<p class="muted small">Transformée en footing (récupération ou charge trop élevée).</p>' : ''}
     ${s.adjustedFrom ? `<p class="muted small">Ajustée après ta dernière séance du même type (prévue : « ${esc(s.adjustedFrom)} »).</p>` : ''}
@@ -81,6 +82,7 @@ export function renderSession(id) {
   });
   view.querySelector('[data-move]')?.addEventListener('click', () => moveToToday(id));
   view.querySelector('#unavail')?.addEventListener('click', () => unavailableSheet(s));
+  view.querySelector('#postpone-strength')?.addEventListener('click', () => postponeStrengthSheet(s));
   view.querySelector('#push-one')?.addEventListener('click', async (ev) => {
     ev.currentTarget.disabled = true;
     ev.currentTarget.textContent = 'Envoi…';
@@ -179,5 +181,23 @@ function unavailableSheet(s) {
       toast('Séance sautée : le plan en tient compte au prochain bilan.');
       route();
     });
+  });
+}
+
+function postponeStrengthSheet(s) {
+  const opts = strengthMoveOptions(state.plan, state.log, s.id, today());
+  if (!opts.length) { toast('Aucun autre jour disponible pour le renforcement.'); return; }
+  showSheet(`<h2>Reporter le renforcement</h2>
+    <p class="muted">Choisis le nouveau jour. Ta course n'est pas touchée : le renfo peut se faire le même jour qu'un footing.</p>
+    ${opts.map((d, i) => `<button class="btn ${i === 0 ? 'primary' : ''} str-opt" data-date="${d}">${esc(dateLong(d)[0].toUpperCase() + dateLong(d).slice(1))}</button>`).join('')}
+    <button class="btn ghost" data-close>Annuler</button>`, (sheet) => {
+    sheet.querySelectorAll('.str-opt').forEach((b) => b.addEventListener('click', () => {
+      state.plan = moveStrength(state.plan, s.id, b.dataset.date);
+      persist();
+      repushIfNeeded([s.id]);
+      closeSheet();
+      toast(`Renforcement reporté au ${dateLong(b.dataset.date)}.`);
+      renderSession(s.id);
+    }));
   });
 }

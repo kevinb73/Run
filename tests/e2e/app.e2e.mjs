@@ -306,6 +306,23 @@ test('sommeil toujours affiché + avancer une autre séance (course / renfo) à 
   noErrors(p);
 });
 
+test('reporter un renforcement à un autre jour depuis sa page', async () => {
+  const p = await newPage(env.browser);
+  await seed(p);
+  const st0 = await stored(p);
+  const renfo = st0.plan.weeks.flatMap((w) => w.sessions).find((x) => x.type === 'strength' && x.date >= '2026-11-14');
+  await p.evaluate((id) => { location.hash = `#/session/${id}`; }, renfo.id); await p.waitForTimeout(300);
+  assert.ok(await p.locator('#postpone-strength').count(), 'bouton « Reporter » présent sur le renfo');
+  await p.click('#postpone-strength'); await p.waitForTimeout(300);
+  const target = await p.locator('.str-opt').first().getAttribute('data-date');
+  await p.locator('.str-opt').first().click(); await p.waitForTimeout(400);
+  const st = await stored(p);
+  const moved = st.plan.weeks.flatMap((w) => w.sessions).find((x) => x.id === renfo.id);
+  assert.equal(moved.date, target, 'renfo reporté au jour choisi');
+  assert.equal(moved.movedFrom, renfo.date, 'origine mémorisée');
+  noErrors(p);
+});
+
 test('toutes les pages s\'ouvrent sans erreur', async () => {
   const p = await newPage(env.browser);
   await seed(p);
