@@ -174,6 +174,9 @@ Niche la plus prometteuse : **préparation physique des arbitres** (tests obliga
 | v0.43 | Boucle : rayon de recherche des coins nature réglable (10 / 20 / 30 min de voiture) |
 | v0.44 | Boucle : recherche nature accélérée (requête Overpass allégée, 2 serveurs, délai max) ; typologie de chaque boucle (dénivelé réel + % chemins/pistes vs route) |
 | v0.45 | Boucle : recherche « Coins nature » débranchée (Overpass trop lent/instable) ; chercheur de boucles de base conservé (position/adresse/carte, terrain, typologie, GPX, « M'y emmener »). Code moteur gardé pour réactivation éventuelle |
+| v0.46–0.47 | Boucle : bouton « Trouver un parcours » à la bonne largeur ; correctif « Ma position » (la recherche restait désactivée sans carte chargée) |
+| v0.48 | Retrait complet de « Trouver une boucle » (mal intégrée, seule fonction dépendante d'une clé/CDN/réseau ; navigation de parcours faite nativement dans la montre Garmin). Code gardé dans l'historique Git |
+| v0.49 | **Garde-fou FC sur les footings** : cible de zone facile en bpm affichée sur la séance (avant de courir) + verdict du récap en bpm au lieu du % FC max (calcul Karvonen, cohérent avec le moteur). **Courbe de forme** sur l'écran Progrès : évolution de la charge chronique (preuve visuelle du progrès) + fraîcheur du jour. Inspirés du benchmark Runna/TrainingPeaks |
 
 ## Coûts récurrents
 

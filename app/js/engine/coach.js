@@ -25,6 +25,19 @@ export function hrIntensity(avgHr, hr) {
 }
 
 /**
+ * Plafond de la zone facile (endurance fondamentale) en battements/min, d'après le profil cardiaque.
+ * Réutilise LIMITS (haut de zone) : réserve de FC si la FC de repos est connue (Karvonen), sinon % FC max.
+ * @returns { bpm, mode } ou null si la FC max est inconnue.
+ */
+export function easyHrCeiling(hr) {
+  if (!hr?.maxHr) return null;
+  if (hr.restHr && hr.maxHr > hr.restHr) {
+    return { bpm: Math.round(hr.restHr + LIMITS.reserve.high * (hr.maxHr - hr.restHr)), mode: 'reserve' };
+  }
+  return { bpm: Math.round(LIMITS.max.high * hr.maxHr), mode: 'max' };
+}
+
+/**
  * Signaux des 14 derniers jours.
  * @param hr { maxHr, restHr } — profil cardiaque Garmin (peut être null : seule l'allure est alors utilisée).
  * @returns { n, deltaVdot, reasons, tooFast }

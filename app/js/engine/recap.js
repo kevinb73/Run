@@ -2,6 +2,7 @@
 // Logique pure (testée) : l'écran se contente d'afficher ce que renvoie buildRecap().
 
 import { flattenSteps, QUALITY_TYPES } from './analysis.js';
+import { hrIntensity, LIMITS, easyHrCeiling } from './coach.js';
 import { KIND_FR, ZONE_FR, fmtPace, fmtDur } from './recap-format.js';
 
 const TOL = 5;
@@ -77,15 +78,18 @@ export function conclusion(session, e, plan, ctx) {
   const v = a?.verdict ?? (e.feel === 'hard' ? 'hard' : 'success');
   const out = [];
   const short = e.actualKm != null && plan.km && e.actualKm < plan.km * 0.8;
-  const hrPct = e.avgHr && ctx.hr?.maxHr ? e.avgHr / ctx.hr.maxHr : null;
+  const it = e.avgHr ? hrIntensity(e.avgHr, ctx.hr) : null;
+  const ceil = easyHrCeiling(ctx.hr);
 
   if (session.type === 'easy' || session.type === 'long') {
     if (v === 'fast') out.push(`Trop rapide pour un footing : à ${fmtPace(e.paceSecPerKm)}/km, tu travailles une autre filière que l'endurance de base.`);
     else if (v === 'hard') out.push('Séance ressentie dure : ce n\'est pas un échec, c\'est une information. Le plan en tient compte.');
     else out.push(`Footing réussi${e.paceSecPerKm ? ` à ${fmtPace(e.paceSecPerKm)}/km` : ''} : c'est exactement ce qui construit ton endurance.`);
-    if (hrPct != null) {
-      if (hrPct > 0.82) out.push(`Ton cœur était à ${Math.round(hrPct * 100)} % de ta FC max : c'est haut pour un footing. Ralentis la prochaine fois, quitte à marcher quelques secondes.`);
-      else out.push(`Cœur à ${Math.round(hrPct * 100)} % de ta FC max : bien dans la zone d'endurance ✓`);
+    if (it && ceil) {
+      if (it.value > LIMITS[it.mode].high) out.push(`Cœur à ${e.avgHr} bpm, au-dessus de ta zone facile (sous ${ceil.bpm} bpm) : la prochaine fois, ralentis, quitte à marcher quelques secondes. La lenteur, c'est le travail.`);
+      else out.push(`Cœur à ${e.avgHr} bpm, dans ta zone facile (sous ${ceil.bpm} bpm) ✓`);
+    } else if (e.avgHr && ctx.hr?.maxHr) {
+      out.push(`Cœur à ${Math.round((e.avgHr / ctx.hr.maxHr) * 100)} % de ta FC max.`);
     }
     if (short) out.push('Distance un peu en dessous du prévu : pas grave, la régularité compte plus que chaque kilomètre.');
   } else if (QUALITY_TYPES.includes(session.type) || session.type === 'test') {
