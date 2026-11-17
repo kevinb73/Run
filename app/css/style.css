@@ -548,18 +548,16 @@ h1 { font-weight: 800; } .mega { font-weight: 850; letter-spacing: -0.035em; }
 .btn.primary { text-transform: none; letter-spacing: -0.01em; }
 .today .btn.primary { border-radius: 16px; }
 
-/* Barre d'onglets : pilule flottante en verre */
+/* Barre d'onglets : pleine largeur, collée en bas (le contenu passe dessous en se floutant, look iOS) */
 .tabbar {
-  left: 50%; right: auto; transform: translateX(-50%);
-  bottom: calc(env(safe-area-inset-bottom) + 12px);
-  width: min(440px, calc(100% - 24px));
-  padding: 8px; border-radius: 26px;
-  background: rgba(255, 255, 255, 0.075);
-  border: 1px solid var(--border); border-top: 1px solid var(--border);
-  backdrop-filter: blur(26px) saturate(180%); -webkit-backdrop-filter: blur(26px) saturate(180%);
-  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.5), inset 0 1px 0 var(--glass-hi);
+  left: 0; right: 0; transform: none; bottom: 0; width: auto; border-radius: 0;
+  padding: 8px max(14px, env(safe-area-inset-right, 0px)) calc(env(safe-area-inset-bottom, 0px) + 8px) max(14px, env(safe-area-inset-left, 0px));
+  background: rgba(8, 10, 16, 0.68);
+  border: none; border-top: 1px solid var(--border);
+  backdrop-filter: blur(28px) saturate(180%); -webkit-backdrop-filter: blur(28px) saturate(180%);
+  box-shadow: none;
 }
-.tabbar a { border-radius: 16px; padding: 7px 4px; transition: color .25s, background .25s; }
+.tabbar a { border-radius: 14px; padding: 7px 4px; transition: color .25s, background .25s; }
 .tabbar a.active { background: rgba(255, 255, 255, 0.1); }
 
 /* Feuilles modales en verre */
