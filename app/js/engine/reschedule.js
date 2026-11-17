@@ -152,9 +152,16 @@ export function addBonus(plan, today, { km, strides = false } = {}) {
   // Pas de doublon : on retire un éventuel ancien bonus du même jour (sinon collision d'identifiant).
   copy.weeks.forEach((w) => { w.sessions = w.sessions.filter((x) => x.id !== id); });
   const week = copy.weeks.find((w) => today >= w.start && today < addDays(w.start, 7)) ?? copy.weeks[0];
-  const dist = Math.max(1, Math.round((km ?? suggestedBonusKm(plan, today)) * 2) / 2);
-  const s = easyRun({ paces: week.paces }, dist, strides ? { strides: true } : {});
-  const est = estimate(s.steps, week.paces);
+  // La distance demandée est le TOTAL. Si lignes droites : elles ajoutent de la distance,
+  // on raccourcit donc le footing d'autant pour retomber sur le total voulu.
+  const target = Math.max(1, km ?? suggestedBonusKm(plan, today));
+  let s = easyRun({ paces: week.paces }, target, strides ? { strides: true } : {});
+  let est = estimate(s.steps, week.paces);
+  if (strides) {
+    const stridesKm = est.km - Math.round(target * 2) / 2; // distance ajoutée par les lignes droites
+    s = easyRun({ paces: week.paces }, Math.max(1, target - stridesKm), { strides: true });
+    est = estimate(s.steps, week.paces);
+  }
   const bonus = {
     id, date: today, ...s,
     title: strides ? 'Footing bonus + lignes droites' : 'Footing bonus',
