@@ -73,6 +73,24 @@ export function buildRecap(session, entry, ctx = {}) {
 }
 
 /** 2–3 phrases : ce qui s'est passé, ce que ça veut dire, ce qui vient ensuite. */
+/** Choix déterministe (mais varié d'une séance à l'autre) dans une liste de formulations. */
+function pick(arr, seed) {
+  let h = 7;
+  for (const c of String(seed || '')) h = (h * 31 + c.charCodeAt(0)) | 0;
+  return arr[Math.abs(h) % arr.length];
+}
+
+/** Réaction du coach à ce que l'utilisateur a écrit (ressenti libre). */
+function noteEcho(note) {
+  const n = String(note).toLowerCase();
+  if (/douleur|\bmal\b|genou|tendon|cheville|blessu|gêne|gene/.test(n)) return 'Tu signales une gêne : lève le pied si elle persiste plus de 2 jours, et note-la dans « douleur » pour que le plan s\'adapte.';
+  if (/fatig|crevé|crève|lourd|épuis|epuis|vidé|cuit|dur\b|difficile/.test(n)) return 'Senti fatigué : c\'est normal en reprise. La prochaine fois, pars encore plus lentement, et soigne ton sommeil cette nuit.';
+  if (/essouffl|respir|point de côté|point de cote|cardio|souffle/.test(n)) return 'Essoufflement : ralentis le départ, l\'allure facile doit te laisser parler. Ça s\'améliore vite avec la régularité.';
+  if (/froid|pluie|vent|chaud|flotte|mouillé/.test(n)) return 'Conditions difficiles, et tu es sorti quand même : c\'est exactement la régularité qui construit. Bravo.';
+  if (/facile|bien|super|agréable|agreable|léger|leger|forme|plaisir|top|nickel/.test(n)) return 'Senti facile et agréable : ton corps encaisse bien. On garde ce rythme, sans accélérer.';
+  return 'Merci pour ton retour : je le garde en tête pour la suite.';
+}
+
 export function conclusion(session, e, plan, ctx) {
   const a = e.analysis;
   const v = a?.verdict ?? (e.feel === 'hard' ? 'hard' : 'success');
@@ -84,7 +102,15 @@ export function conclusion(session, e, plan, ctx) {
   if (session.type === 'easy' || session.type === 'long') {
     if (v === 'fast') out.push(`Trop rapide pour un footing : à ${fmtPace(e.paceSecPerKm)}/km, tu travailles une autre filière que l'endurance de base.`);
     else if (v === 'hard') out.push('Séance ressentie dure : ce n\'est pas un échec, c\'est une information. Le plan en tient compte.');
-    else out.push(`Footing réussi${e.paceSecPerKm ? ` à ${fmtPace(e.paceSecPerKm)}/km` : ''} : c'est exactement ce qui construit ton endurance.`);
+    else {
+      const p = e.paceSecPerKm ? ` à ${fmtPace(e.paceSecPerKm)}/km` : '';
+      out.push(pick([
+        `Footing réussi${p} : c'est exactement ce qui construit ton endurance.`,
+        `Bon footing${p}. La régularité à cette allure, c'est ce qui paie sur la durée.`,
+        `Footing bien tenu${p}. Rien à changer : continue à poser la base, tranquillement.`,
+        `C'est le genre de footing${p} qui ne paie pas tout de suite mais qui construit tout. Continue.`,
+      ], session.id));
+    }
     if (it && ceil) {
       if (it.value > LIMITS[it.mode].high) out.push(`Cœur à ${e.avgHr} bpm, au-dessus de ta zone facile (sous ${ceil.bpm} bpm) : la prochaine fois, ralentis, quitte à marcher quelques secondes. La lenteur, c'est le travail.`);
       else out.push(`Cœur à ${e.avgHr} bpm, dans ta zone facile (sous ${ceil.bpm} bpm) ✓`);
@@ -101,6 +127,7 @@ export function conclusion(session, e, plan, ctx) {
   } else {
     out.push(v === 'hard' ? 'Séance ressentie dure : on en tient compte.' : 'Séance faite ✓');
   }
+  if (e.note) out.push(noteEcho(e.note));
   if (ctx.next) out.push(`Prochaine séance : ${ctx.next.title} (${ctx.next.dateLabel}).`);
   return out.filter(Boolean);
 }
