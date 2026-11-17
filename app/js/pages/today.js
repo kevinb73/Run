@@ -1,6 +1,6 @@
 import { PHASES, SPORTS } from '../engine/plan.js';
 import { adaptPlan, recentStats, currentWeek } from '../engine/adapt.js';
-import { canAddBonus, addBonus, canMoveToToday, moveSession, movableToToday, downgradeToEasy, findSafeDay, missedKeySession, makeUp, shortenEasy, HARD_TYPES } from '../engine/reschedule.js';
+import { canAddBonus, addBonus, suggestedBonusKm, canMoveToToday, moveSession, movableToToday, downgradeToEasy, findSafeDay, missedKeySession, makeUp, shortenEasy, HARD_TYPES } from '../engine/reschedule.js';
 import { loadStatus, manualActivities, LOAD_LABELS } from '../engine/load.js';
 import { readinessAdvice, formClass, LEVEL_FR, HRV_FR } from '../engine/readiness.js';
 import { api } from '../garmin.js';
@@ -366,16 +366,24 @@ export function garminTodayBlock(t) {
 /** Ajoute un footing facile aujourd'hui, en plus du plan (aucune séance déplacée). */
 export function addBonusToday() {
   const t = today();
-  const { plan, id } = addBonus(state.plan, t);
-  state.plan = plan;
-  persist();
-  const s = findSession(id);
-  showSheet(`<h2>Footing bonus ajouté</h2>
-    <p><strong>${Math.round(s.min)} min très faciles</strong> aujourd'hui. Le reste du plan ne bouge pas.</p>
-    <p class="muted">Garde-le vraiment tranquille : c'est du volume en plus, pas une séance à réussir.</p>
-    <button class="btn primary" data-close>OK</button>`);
-  pushWeek({ silent: true });
-  location.hash = `#/session/${id}`;
+  const sugg = suggestedBonusKm(state.plan, t);
+  showSheet(`<h2>Courir en plus aujourd'hui</h2>
+    <p class="muted">Un footing facile en plus, sans toucher au reste du plan.</p>
+    <label class="field">Distance (km)<input type="number" id="bonus-km" min="1" max="20" step="0.5" value="${sugg}"></label>
+    <label class="check"><input type="checkbox" id="bonus-strides"> Avec lignes droites (quelques accélérations courtes en fin de footing)</label>
+    <button class="btn primary" id="bonus-go">Ajouter le footing</button>
+    <button class="btn ghost" data-close>Annuler</button>`, (sheet) => {
+    sheet.querySelector('#bonus-go').addEventListener('click', () => {
+      const km = Number(sheet.querySelector('#bonus-km').value) || sugg;
+      const strides = sheet.querySelector('#bonus-strides').checked;
+      const { plan, id } = addBonus(state.plan, t, { km, strides });
+      state.plan = plan;
+      persist();
+      closeSheet();
+      pushWeek({ silent: true });
+      location.hash = `#/session/${id}`;
+    });
+  });
 }
 
 /** Avance une séance à aujourd'hui, en vérifiant les règles de sécurité. */

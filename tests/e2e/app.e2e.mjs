@@ -32,9 +32,13 @@ test('footing bonus : ajouté sans rien décaler, boutons masqués une fois cour
   await seed(p);
   const before = (await stored(p)).plan.weeks.flatMap((w) => w.sessions).length;
   await p.click('#add-bonus'); await p.waitForTimeout(300);
-  await p.click('[data-close]');
+  await p.fill('#bonus-km', '4'); await p.check('#bonus-strides');
+  await p.click('#bonus-go'); await p.waitForTimeout(400);
   const st = await stored(p);
   assert.equal(st.plan.weeks.flatMap((w) => w.sessions).length, before + 1);
+  const bonus = st.plan.weeks.flatMap((w) => w.sessions).find((s) => s.id === 'bonus-2026-11-14');
+  assert.ok(bonus.km >= 3.5 && bonus.km <= 5, `distance choisie respectée (${bonus.km} km)`);
+  assert.match(bonus.title, /lignes droites/, 'option lignes droites prise en compte');
   await p.evaluate(() => { const k = 'run-coach:v1'; const s = JSON.parse(localStorage.getItem(k)); s.log['bonus-2026-11-14'] = { done: true, feel: 'ok', at: '2026-11-14', actualKm: 2.6, durationSec: 1290, avgHr: 152 }; localStorage.setItem(k, JSON.stringify(s)); });
   await p.reload(); await p.evaluate(() => { location.hash = '#/'; }); await p.waitForTimeout(600);
   assert.match(await p.evaluate(() => location.hash), /#\/recap\//, 'le récap s\'ouvre tout seul après la séance');

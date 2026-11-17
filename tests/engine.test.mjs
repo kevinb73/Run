@@ -520,6 +520,15 @@ test('footing bonus : ajouté aujourd\'hui sans déplacer le plan, reconnu à l\
   assert.ok(!r.log[first.id], 'la séance de lundi reste à faire');
 });
 
+test('footing bonus : distance et lignes droites choisies', () => {
+  const plan = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, weeklyKm: 5, longestRunKm: 3 }, { today: TODAY });
+  const b = addBonus(plan, TODAY, { km: 4, strides: true }).plan.weeks.flatMap((w) => w.sessions).find((s) => s.bonus);
+  assert.ok(b.km >= 3.5 && b.km <= 5.5, `distance ~4 km respectée (${b.km})`);
+  assert.match(b.title, /lignes droites/, 'option lignes droites prise en compte');
+  const b2 = addBonus(plan, TODAY, {}).plan.weeks.flatMap((w) => w.sessions).find((s) => s.bonus);
+  assert.equal(b2.title, 'Footing bonus', 'sans option : footing simple, distance auto');
+});
+
 test('footing dur ou cœur haut : le footing suivant (≤ 3 j) est allégé de 20 %, sinon rien', async () => {
   const { applyEasyFeedback } = await import('../app/js/engine/easyfeedback.js');
   const plan0 = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, weeklyKm: 5, longestRunKm: 3 }, { today: TODAY });
