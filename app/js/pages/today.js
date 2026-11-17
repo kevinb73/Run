@@ -225,10 +225,15 @@ export function loadBlock(t) {
 export async function refreshReadiness() {
   const t = today();
   // On récupère la forme du jour même les jours de repos : c'est aussi le canal du score de sommeil.
-  if (!garminOn() || state.readiness?.date === t) return;
+  if (!garminOn()) return;
+  const rd = state.readiness;
+  const hasData = rd?.data && (rd.data.sleepScore != null || rd.data.hrvStatus || rd.data.score != null);
+  // Déjà les données du jour → rien à faire. Sinon on réessaie (au plus toutes les 5 min) : le sommeil
+  // arrive souvent quelques heures après le réveil, une fois la montre synchronisée avec Garmin Connect.
+  if (rd?.date === t && (hasData || Date.now() - (rd.at || 0) < 5 * 60 * 1000)) return;
   try {
     const r = await api(state.garmin, 'GET', `/readiness?day=${t}`);
-    state.readiness = { date: t, data: r, handled: false };
+    state.readiness = { date: t, data: r, at: Date.now(), handled: rd?.date === t ? rd.handled : false };
     persist();
     if (location.hash === '' || location.hash === '#/') renderToday();
   } catch { /* non bloquant */ }
