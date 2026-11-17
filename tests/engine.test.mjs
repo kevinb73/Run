@@ -408,9 +408,14 @@ test('récap : chiffres, prévu/réalisé, étapes et conclusion', async () => {
   const r = buildRecap(easy, entry, { paces: w.paces, hr: { maxHr: 190 }, next: { title: 'Sortie longue', dateLabel: 'dimanche 29 novembre' } });
   assert.ok(r.stats.some((s) => s.label === 'Calories' && s.value === '380 kcal'));
   assert.ok(r.compare.every((c) => c.ok));
-  assert.ok(r.conclusion[0].startsWith('Footing réussi'));
+  assert.match(r.conclusion[0], /footing/i); // phrase de réussite (variée selon la séance)
   assert.ok(r.conclusion.some((c) => c.includes('150 bpm, dans ta zone facile (sous 160 bpm)')));
   assert.ok(r.conclusion.at(-1).includes('Prochaine séance : Sortie longue'));
+  // Le coach réagit au ressenti écrit (texte libre)
+  const withNote = (note) => buildRecap(easy, { ...entry, note }, { paces: w.paces, hr: { maxHr: 190 } }).conclusion.join(' ');
+  assert.match(withNote('jambes lourdes, j\'étais crevé'), /fatigué|sommeil/i);
+  assert.match(withNote('un peu mal au genou'), /g(ê|e)ne|douleur/i);
+  assert.match(withNote('essoufflé en côte'), /essoufflement|ralentis/i);
   // Étapes : séance structurée lancée depuis la montre (un tour par étape)
   const hills = plan.weeks.flatMap((x) => x.sessions).find((s) => s.type === 'fartlek' || s.type === 'hills');
   const laps = flattenSteps(hills.steps).map((st) => ({ distanceM: st.dur.type === 'distance' ? st.dur.m : 200, durationSec: st.dur.type === 'time' ? st.dur.s : 600, avgHr: 150 }));

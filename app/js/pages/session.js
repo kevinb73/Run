@@ -61,7 +61,8 @@ export function renderSession(id) {
         ${sportKind ? `<label class="field">Durée ${sportKind === 'referee' ? 'de l\'arbitrage' : `du ${esc(SPORTS[sportKind].label.toLowerCase())}`} (min)<small class="muted"> · sans montre, compte dans ta charge</small><input type="number" inputmode="numeric" name="sportMin" min="0" max="300" value="${e.sportMin ?? ''}" placeholder="ex. 60"></label>` : ''}
         ${s.optional ? '' : `<label class="field">Distance réelle (km)<input type="number" inputmode="decimal" step="0.1" name="km" value="${e.actualKm ?? s.km}"></label>`}
         ${s.optional ? '' : painFields(e.pain)}
-        <label class="field">Note (optionnel)<input type="text" name="note" value="${esc(e.note ?? '')}" maxlength="200"></label>
+        <label class="field">Comment tu t'es senti ? <small class="muted">(optionnel · ton coach en tient compte)</small>
+          <textarea name="note" rows="3" maxlength="400" placeholder="Jambes lourdes au départ puis ça s'est débloqué, un peu essoufflé en côte…">${esc(e.note ?? '')}</textarea></label>
         <div class="actions">
           <button type="button" class="btn ghost" id="skip">${e.skipped ? 'Annuler' : s.optional ? 'Pas cette fois' : 'Pas faite'}</button>
           <button type="submit" class="btn primary">${e.done && !e.replacedBy ? 'Mettre à jour' : s.type === 'strength' ? 'C\'est fait' : s.optional ? 'J\'y suis allé' : 'Séance faite'}</button>

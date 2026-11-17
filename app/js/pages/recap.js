@@ -33,10 +33,21 @@ export function renderRecap(id) {
       <span>${esc(x.actual)}${x.hr ? ` · ${x.hr} bpm` : ''} ${x.status ? `<b>${st[x.status]}</b>` : ''}</span></li>`).join('')}</ol></section>`
       : QUALITY_TYPES.includes(s.type) ? '<p class="muted small">Lance la séance depuis ta montre pour avoir le détail répétition par répétition.</p>' : ''}
     ${e.analysis?.details?.length ? `<section class="card"><h2>Analyse détaillée</h2><ul class="adj">${e.analysis.details.map((d) => `<li>${esc(d)}</li>`).join('')}</ul></section>` : ''}
+    <section class="card"><h2>Comment tu t'es senti ?</h2>
+      <form id="note-form"><textarea name="note" rows="3" maxlength="400" placeholder="Jambes lourdes au départ puis ça s'est débloqué, un peu essoufflé en côte…">${esc(e.note ?? '')}</textarea>
+      <button class="btn" type="submit">${e.note ? 'Mettre à jour mon ressenti' : 'Écrire mon ressenti'}</button></form>
+      <p class="muted small">Le mot du coach ci-dessus en tient compte. Pour une analyse détaillée, demande à ChatGPT : « analyse ma dernière séance ».</p></section>
     <section class="card"><h2>Une douleur ?</h2>
       ${e.pain ? `<p>${e.pain.level ? `Signalée : ${esc(PAIN_LEVELS[e.pain.level])} · ${esc(PAIN_ZONES[e.pain.zone] ?? '')}` : 'Aucune douleur signalée ✓'}</p>` : '<p class="muted">Pendant ou après la séance : c\'est ce qui permet de prévenir les blessures.</p>'}
       <form id="pain-form">${painFields(e.pain)}<button class="btn" type="submit">${e.pain ? 'Mettre à jour' : 'Enregistrer'}</button></form></section>
     ${e.calories ? '<p class="muted small center">Calories : estimation Garmin (±10–20 %).</p>' : ''}`;
+  view.querySelector('#note-form')?.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    state.log[id] = { ...state.log[id], note: ev.currentTarget.note.value.trim() || undefined };
+    persist();
+    toast('Ressenti enregistré : le coach en tient compte.');
+    renderRecap(id);
+  });
   view.querySelector('#pain-form')?.addEventListener('submit', (ev) => {
     ev.preventDefault();
     state.log[id] = { ...state.log[id], pain: readPain(ev.currentTarget) ?? { level: 0 } };

@@ -20,7 +20,9 @@ INSTRUCTIONS = (
     "Tu es le coach course à pied de l'utilisateur (francophone). Les outils lisent son plan Run Coach "
     "(remise en forme, futsal et arbitrage en parallèle), ses séances avec ressenti, cardio et calories, sa charge "
     "et sa forme Garmin. Réponds en français, de façon structurée et chiffrée, sans complaisance. Priorités : "
-    "régularité, prévention des blessures (chevilles, genoux), progression douce. Tu ne modifies rien directement : "
+    "régularité, prévention des blessures (chevilles, genoux), progression douce. Quand il te demande d'analyser une "
+    "séance, appuie-toi autant sur son ressenti écrit (champ « note ») que sur les chiffres, et termine par 2–3 conseils "
+    "concrets pour la prochaine séance. Tu ne modifies rien directement : "
     "si un changement est utile, propose-le avec l'outil proposer_modification (l'utilisateur validera dans l'app) ; pour le reste (changer ses jours, signaler une douleur), dis-lui quoi faire dans l'app."
 )
 
@@ -239,7 +241,7 @@ TOOLS: dict[str, tuple[Callable, dict]] = {
         "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False}}),
     "seances_recentes": (tool_seances_recentes, {
         "title": "Séances récentes",
-        "description": "Séances du plan sur les N derniers jours (statut, ressenti, km, durée, allure, cardio, calories, douleur, analyse) et activités Garmin (futsal, arbitrage, courses libres).",
+        "description": "Séances du plan sur les N derniers jours (statut, ressenti Facile/Correct/Dur, note écrite libre de l'utilisateur, km, durée, allure, cardio, calories, douleur, analyse) et activités Garmin (futsal, arbitrage, courses libres).",
         "inputSchema": {"type": "object", "properties": {"jours": {"type": "integer", "minimum": 1, "maximum": 90, "description": "Nombre de jours (14 par défaut)"}}, "additionalProperties": False}}),
     "bilan_mensuel": (tool_bilan_mensuel, {
         "title": "Bilan d'un mois",
