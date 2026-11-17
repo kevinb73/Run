@@ -243,8 +243,12 @@ test('ChatGPT propose, l\'utilisateur applique ou refuse dans l\'app', async () 
   const st0 = await stored(p);
   await fetch(`${GARMIN_CFG.url}/backup`, { method: 'PUT', headers: { 'X-Api-Key': GARMIN_CFG.key, 'content-type': 'application/json' }, body: JSON.stringify(st0) });
   const all = st0.plan.weeks.flatMap((w) => w.sessions);
-  const easy = all.find((s) => s.type === 'easy' && s.date >= '2026-11-16');
-  const long = all.find((s) => s.type === 'long' && s.date >= '2026-11-16');
+  // Dates robustes à l'horloge réelle du serveur MCP : on vise des séances strictement à venir
+  // (sinon le serveur refuse à juste titre une modification sur une date passée).
+  const serverToday = new Date().toISOString().slice(0, 10);
+  const future = all.filter((s) => s.date > serverToday);
+  const easy = future.find((s) => s.type === 'easy');
+  const long = future.find((s) => s.type === 'long');
   const call = async (args) => (await (await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'proposer_modification', arguments: args } }) })).json()).result;
   const r1 = await call({ action: 'alleger', date: long.date, raison: 'Futsal la veille : on garde des jambes.' });
