@@ -148,18 +148,21 @@ export function suggestedBonusKm(plan, today) {
 
 export function addBonus(plan, today, { km, strides = false } = {}) {
   const copy = structuredClone(plan);
+  const id = `bonus-${today}`;
+  // Pas de doublon : on retire un éventuel ancien bonus du même jour (sinon collision d'identifiant).
+  copy.weeks.forEach((w) => { w.sessions = w.sessions.filter((x) => x.id !== id); });
   const week = copy.weeks.find((w) => today >= w.start && today < addDays(w.start, 7)) ?? copy.weeks[0];
   const dist = Math.max(1, Math.round((km ?? suggestedBonusKm(plan, today)) * 2) / 2);
   const s = easyRun({ paces: week.paces }, dist, strides ? { strides: true } : {});
   const est = estimate(s.steps, week.paces);
   const bonus = {
-    id: `bonus-${today}`, date: today, ...s,
+    id, date: today, ...s,
     title: strides ? 'Footing bonus + lignes droites' : 'Footing bonus',
     description: 'Séance en plus du plan : reste très facile, elle ne remplace rien.',
     km: est.km, min: est.min, bonus: true,
   };
   week.sessions = [...week.sessions, bonus].sort((a, b) => a.date.localeCompare(b.date));
-  return { plan: copy, id: bonus.id };
+  return { plan: copy, id };
 }
 
 const DAY_NAMES = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];

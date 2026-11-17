@@ -378,6 +378,7 @@ export function addBonusToday() {
       const strides = sheet.querySelector('#bonus-strides').checked;
       const { plan, id } = addBonus(state.plan, t, { km, strides });
       state.plan = plan;
+      delete state.log[id]; // bonus neuf : on efface un éventuel ancien statut (fait / sauté) du même jour
       persist();
       closeSheet();
       pushWeek({ silent: true });
