@@ -49,6 +49,23 @@ test('footing bonus : ajouté sans rien décaler, boutons masqués une fois cour
   noErrors(p);
 });
 
+test('footing bonus : ré-ajout efface un ancien statut « sauté » et réapparaît sur Aujourd\'hui', async () => {
+  const p = await newPage(env.browser);
+  await seed(p, { mutate: `
+    st.plan.weeks[0].sessions.push({ id: 'bonus-2026-11-14', date: '2026-11-14', type: 'easy', title: 'Footing bonus', bonus: true, steps: [], km: 2.5, min: 24 });
+    st.log['bonus-2026-11-14'] = { skipped: true, at: '2026-11-14' };` });
+  // Au départ, le bonus sauté n'apparaît pas comme séance du jour
+  assert.ok(await p.locator('#add-bonus').count(), 'on peut quand même rajouter un bonus');
+  await p.click('#add-bonus'); await p.waitForTimeout(300);
+  await p.click('#bonus-go'); await p.waitForTimeout(400);
+  const st = await stored(p);
+  assert.ok(!st.log['bonus-2026-11-14']?.skipped, 'ancien statut « sauté » effacé');
+  assert.equal(st.plan.weeks.flatMap((w) => w.sessions).filter((s) => s.id === 'bonus-2026-11-14').length, 1, 'pas de doublon');
+  await p.evaluate(() => { location.hash = '#/'; }); await p.waitForTimeout(500);
+  assert.match(await p.locator('#view').innerText(), /Footing bonus/, 'le bonus réapparaît sur Aujourd\'hui');
+  noErrors(p);
+});
+
 test('renfo : carte du jour, fiche avec exercices, « C\'est fait »', async () => {
   const p = await newPage(env.browser);
   await seed(p, { now: '2026-11-16T08:00:00' });

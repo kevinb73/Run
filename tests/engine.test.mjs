@@ -529,6 +529,15 @@ test('footing bonus : distance et lignes droites choisies', () => {
   assert.equal(b2.title, 'Footing bonus', 'sans option : footing simple, distance auto');
 });
 
+test('footing bonus : ré-ajout le même jour ne crée pas de doublon', () => {
+  const plan = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, weeklyKm: 5, longestRunKm: 3 }, { today: TODAY });
+  const p1 = addBonus(plan, TODAY, { km: 3 }).plan;
+  const p2 = addBonus(p1, TODAY, { km: 5, strides: true }).plan;
+  const bonuses = p2.weeks.flatMap((w) => w.sessions).filter((s) => s.id === `bonus-${TODAY}`);
+  assert.equal(bonuses.length, 1, 'un seul bonus, pas de doublon');
+  assert.match(bonuses[0].title, /lignes droites/, 'le dernier ajout remplace l\'ancien');
+});
+
 test('footing dur ou cœur haut : le footing suivant (≤ 3 j) est allégé de 20 %, sinon rien', async () => {
   const { applyEasyFeedback } = await import('../app/js/engine/easyfeedback.js');
   const plan0 = generatePlan({ ...fit, fitnessGoal: 'regular', durationWeeks: 12, weeklyKm: 5, longestRunKm: 3 }, { today: TODAY });
