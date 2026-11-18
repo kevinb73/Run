@@ -202,7 +202,9 @@ export async function syncActivities(force) {
     persist();
     removeDoneAhead();
     if (force) toast(r.notices.length ? `${r.notices.length} course(s) importée(s).` : 'Aucune nouvelle course.');
-    if (r.notices.length || force) route();
+    // On ne re-render QUE si on est sur Aujourd'hui : sinon une synchro qui se termine détruirait
+    // un champ en cours de saisie (ex. ton ressenti sur le récap).
+    if ((r.notices.length || force) && (location.hash === '' || location.hash === '#/')) route();
   } catch (ex) {
     if (force) toast(ex.message);
     if (/expirée|non connecté/.test(ex.message)) { state.garmin.connected = false; persist(); }

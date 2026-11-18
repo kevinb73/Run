@@ -114,12 +114,13 @@ a { color: inherit; }
 }
 .choice input:focus-visible + span, .day input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-.big-input, .field input[type=number], .field input[type=text], .field textarea {
+.big-input, .field input[type=number], .field input[type=text], textarea {
   width: 100%; min-height: 50px; padding: 10px 14px; margin-top: 6px;
   border-radius: 12px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text);
-  font: inherit; font-size: 1.1rem;
+  font: inherit; font-size: 1.1rem; box-sizing: border-box;
 }
-.field textarea { min-height: 78px; resize: vertical; font-size: 1rem; line-height: 1.4; }
+textarea { min-height: 120px; resize: vertical; font-size: 1rem; line-height: 1.45; }
+.pain-fields .field textarea { min-height: 64px; }
 .field { display: block; margin: 18px 0; font-weight: 600; }
 .range { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
 .range input { flex: 1; accent-color: var(--accent); }
