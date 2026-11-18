@@ -62,7 +62,7 @@ export function renderSession(id) {
         ${s.optional ? '' : `<label class="field">Distance réelle (km)<input type="number" inputmode="decimal" step="0.1" name="km" value="${e.actualKm ?? s.km}"></label>`}
         ${s.optional ? '' : painFields(e.pain)}
         <label class="field">Comment tu t'es senti ? <small class="muted">(optionnel · ton coach en tient compte)</small>
-          <textarea name="note" rows="5" maxlength="400" placeholder="Jambes lourdes au départ puis ça s'est débloqué, un peu essoufflé en côte…">${esc(e.note ?? '')}</textarea></label>
+          <textarea name="note" rows="5" maxlength="2000" placeholder="Jambes lourdes au départ puis ça s'est débloqué, un peu essoufflé en côte…">${esc(e.note ?? '')}</textarea></label>
         <div class="actions">
           <button type="button" class="btn ghost" id="skip">${e.skipped ? 'Annuler' : s.optional ? 'Pas cette fois' : 'Pas faite'}</button>
           <button type="submit" class="btn primary">${e.done && !e.replacedBy ? 'Mettre à jour' : s.type === 'strength' ? 'C\'est fait' : s.optional ? 'J\'y suis allé' : 'Séance faite'}</button>
@@ -143,7 +143,7 @@ export function painFields(pain) {
   return `<div class="pain-fields"><p class="field-label">Douleur</p>
     <div class="choices pain-levels">${Object.entries(PAIN_LEVELS).map(([v, l]) => `<label class="choice small"><input type="radio" name="painLevel" value="${v}" ${Number(v) === lvl ? 'checked' : ''}><span>${esc(l.split(' (')[0])}</span></label>`).join('')}</div>
     <label class="field pain-zone" ${lvl ? '' : 'hidden'}>Où ?<select name="painZone">${Object.entries(PAIN_ZONES).map(([k, l]) => `<option value="${k}" ${pain?.zone === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
-    <label class="field pain-zone" ${lvl ? '' : 'hidden'}>Détails <small class="muted">(optionnel · ton coach et ChatGPT en tiennent compte pour adapter)</small><textarea name="painDetail" rows="2" maxlength="300" placeholder="Ex. tiraillement mollet droit au départ, part après 10 min ; gêne genou en descente…">${esc(pain?.detail ?? '')}</textarea></label></div>`;
+    <label class="field pain-zone" ${lvl ? '' : 'hidden'}>Détails <small class="muted">(optionnel · ton coach et ChatGPT en tiennent compte pour adapter)</small><textarea name="painDetail" rows="2" maxlength="800" placeholder="Ex. tiraillement mollet droit au départ, part après 10 min ; gêne genou en descente…">${esc(pain?.detail ?? '')}</textarea></label></div>`;
 }
 
 /** Durée saisie pour un sport sans montre (minutes), ou undefined. */
