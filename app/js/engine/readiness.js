@@ -34,3 +34,14 @@ export function readinessAdvice(r, session) {
   if (f === 'poor') return { action: 'shorten', text: 'Forme très basse : raccourcis ton footing d\'un tiers, ou repose-toi.' };
   return { action: 'none', text: f === 'ok' ? 'Feu vert pour la séance prévue.' : 'Forme un peu basse : reste bien à l\'aise.' };
 }
+
+/**
+ * Faut-il (re)demander la forme du jour au serveur ?
+ * On réessaie tant que le SCORE DE SOMMEIL n'est pas arrivé (Garmin le calcule souvent après la forme/VFC),
+ * au plus une fois toutes les 10 min, et jamais un autre jour que celui déjà en mémoire.
+ */
+export function readinessNeedsRefresh(rd, today, now = Date.now()) {
+  if (rd?.date !== today) return true;            // rien pour aujourd'hui encore
+  if (rd?.data?.sleepScore != null) return false; // sommeil reçu → plus besoin
+  return now - (rd.at || 0) >= 10 * 60 * 1000;    // sinon, nouvelle tentative toutes les 10 min
+}
