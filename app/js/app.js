@@ -72,8 +72,8 @@ export function route() {
 // Affiche le choix de la zone dès qu'une douleur est cochée (délégation : vaut pour tous les formulaires).
 document.addEventListener('change', (ev) => {
   if (ev.target.name !== 'painLevel') return;
-  const zone = ev.target.closest('form, .sheet')?.querySelector('.pain-zone');
-  if (zone) zone.hidden = ev.target.value === '0';
+  // Affiche la zone ET le champ détail (tous deux `.pain-zone`) dès qu'une douleur est cochée.
+  ev.target.closest('form, .sheet')?.querySelectorAll('.pain-zone').forEach((el) => { el.hidden = ev.target.value === '0'; });
 });
 
 window.addEventListener('hashchange', route);
