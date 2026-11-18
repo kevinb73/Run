@@ -2,7 +2,7 @@ import { PHASES, SPORTS } from '../engine/plan.js';
 import { adaptPlan, recentStats, currentWeek } from '../engine/adapt.js';
 import { canAddBonus, addBonus, suggestedBonusKm, canMoveToToday, moveSession, movableToToday, downgradeToEasy, findSafeDay, missedKeySession, makeUp, shortenEasy, HARD_TYPES } from '../engine/reschedule.js';
 import { loadStatus, manualActivities, LOAD_LABELS } from '../engine/load.js';
-import { readinessAdvice, formClass, LEVEL_FR, HRV_FR } from '../engine/readiness.js';
+import { readinessAdvice, readinessNeedsRefresh, formClass, LEVEL_FR, HRV_FR } from '../engine/readiness.js';
 import { api } from '../garmin.js';
 import { buildRecap } from '../engine/recap.js';
 import { painAdvice } from '../engine/pain.js';
@@ -227,10 +227,9 @@ export async function refreshReadiness() {
   // On récupère la forme du jour même les jours de repos : c'est aussi le canal du score de sommeil.
   if (!garminOn()) return;
   const rd = state.readiness;
-  const hasData = rd?.data && (rd.data.sleepScore != null || rd.data.hrvStatus || rd.data.score != null);
-  // Déjà les données du jour → rien à faire. Sinon on réessaie (au plus toutes les 5 min) : le sommeil
-  // arrive souvent quelques heures après le réveil, une fois la montre synchronisée avec Garmin Connect.
-  if (rd?.date === t && (hasData || Date.now() - (rd.at || 0) < 5 * 60 * 1000)) return;
+  // On réessaie tant que le sommeil n'est pas arrivé (Garmin le calcule souvent après la forme/VFC),
+  // au plus toutes les 10 min. Avant, l'app s'arrêtait dès qu'elle avait la forme → le sommeil restait bloqué.
+  if (!readinessNeedsRefresh(rd, t)) return;
   try {
     const r = await api(state.garmin, 'GET', `/readiness?day=${t}`);
     state.readiness = { date: t, data: r, at: Date.now(), handled: rd?.date === t ? rd.handled : false };

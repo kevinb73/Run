@@ -345,6 +345,18 @@ test('courbe de forme : charge chronique dans le temps, seulement avec assez d\'
   assert.equal(loadTrend([act('2026-12-19', 50)], t, null).length, 0, 'aucun point sans historique suffisant');
 });
 
+test('forme/sommeil : on réessaie tant que le sommeil manque, même si la forme est déjà là', async () => {
+  const { readinessNeedsRefresh } = await import('../app/js/engine/readiness.js');
+  const T = '2026-11-18', now = 1_700_000_000_000;
+  assert.equal(readinessNeedsRefresh(undefined, T, now), true, 'rien encore aujourd\'hui');
+  assert.equal(readinessNeedsRefresh({ date: '2026-11-17', data: {}, at: now }, T, now), true, 'données d\'un autre jour');
+  assert.equal(readinessNeedsRefresh({ date: T, data: { sleepScore: 72 }, at: now }, T, now), false, 'sommeil reçu → on arrête');
+  // Le bug : forme/VFC arrivées mais pas le sommeil → l'app doit CONTINUER d'essayer
+  const partiel = { date: T, data: { score: 60, hrvStatus: 'BALANCED', sleepScore: null } };
+  assert.equal(readinessNeedsRefresh({ ...partiel, at: now - 2 * 60 * 1000 }, T, now), false, 'throttle 10 min');
+  assert.equal(readinessNeedsRefresh({ ...partiel, at: now - 11 * 60 * 1000 }, T, now), true, 'nouvelle tentative après 10 min');
+});
+
 test('reporter un renforcement : déplacé sans échange (coexiste avec la course), sa date est exclue des options', async () => {
   const { moveStrength, strengthMoveOptions } = await import('../app/js/engine/reschedule.js');
   const plan = generatePlan(base, { today: TODAY });
