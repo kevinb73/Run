@@ -1,5 +1,5 @@
 import * as store from '../store.js';
-import { SPORTS } from '../engine/plan.js';
+import { SPORTS, RACES } from '../engine/plan.js';
 import { currentWeek } from '../engine/adapt.js';
 import { replanDays } from '../engine/replan.js';
 import { vdotFromPerformance, predictTime } from '../engine/vdot.js';
@@ -62,7 +62,7 @@ export function renderProfile() {
     ${restart ? `<section class="card"><h2>Reprise</h2><p class="muted">Pas de chrono à ce stade : l'objectif est de courir 30 min sans s'arrêter. Les allures ci-dessous sont indicatives, fie-toi surtout à l'aisance respiratoire.</p></section>` : `<section class="card">
       <h2>Niveau actuel</h2>
       <p>VDOT <strong>${cur.vdot}</strong> <span class="muted">(départ ${p.vdotStart}, visé ${p.vdotGoal})</span></p>
-      <p class="muted">Prédiction ${p.mode === 'fitness' ? 'sur 5 km' : ''} aujourd'hui : ${duration(predictTime(cur.vdot, p.profile.raceDistance))} · objectif plan : ${duration(p.predictedGoalSec)}</p>
+      <p class="muted">Prédiction sur ${p.mode === 'fitness' ? '5 km' : esc(RACES[p.profile.raceDistance]?.label ?? `${Math.round(p.profile.raceDistance / 1000)} km`)} aujourd'hui : ${duration(predictTime(cur.vdot, p.profile.raceDistance))} · objectif plan : ${duration(p.predictedGoalSec)}</p>
     </section>`}
     <section class="card">
       <h2>Tes allures cette semaine</h2>
@@ -95,7 +95,7 @@ export function renderProfile() {
         <button class="btn" id="redo">Refaire le questionnaire</button>
       </div>
     </section>
-    <p class="muted center small">Run Coach · v0.61</p>`;
+    <p class="muted center small">Run Coach · v0.62</p>`;
 
   bindGarminProfile();
   view.querySelector('#pause-btn')?.addEventListener('click', pauseSheet);
